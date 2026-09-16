@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.venv/
+venv/
+
+# Personal interview content generated locally - don't publish transcripts/reports
+reports/*.md
+ai_pm_interview_coach_agent/progress_log.md
