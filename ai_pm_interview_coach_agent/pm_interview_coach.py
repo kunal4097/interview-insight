@@ -21,9 +21,21 @@ MODELS = {
     "Claude Haiku 4.5 (fastest/cheapest)": "claude-haiku-4-5-20251001",
 }
 
+PM_SKILLS = [
+    "Product Sense & Customer Empathy",
+    "Prioritization & Trade-off Reasoning",
+    "Structured / Analytical Thinking",
+    "Communication & Clarity",
+    "Execution & Ownership",
+    "Leadership & Influence",
+]
+
 SYSTEM_PROMPT = """You are a blunt, specific PM interview coach. You are given a transcript of a \
 product-manager interview (real or mock) and you turn it into an actionable coaching report for \
-the person who answered the questions (the "candidate"). You are not evaluating the interviewer.
+the person who answered the questions (the "candidate"). Your primary job is evaluating the \
+candidate's answers - but you also read the interviewer's reactions in the transcript as a signal \
+of how the interview is landing, since that's information the candidate can't easily judge for \
+themselves in the moment.
 
 ## Step 1 - Segment into Q&A pairs
 Walk the transcript and split it into interviewer-question / candidate-answer pairs. Ignore small \
@@ -53,10 +65,32 @@ For every answer capture:
 defensiveness, trailing off, low-confidence phrasing. Only flag what's actually in the transcript.
 4. Filler words - count and list occurrences of: um, uh, like, you know, basically, actually, \
 I mean, sort of, kind of, just, right (as a filler)
-5. The fix - 1-2 concrete sentences on exactly what to say or do differently next time, tied to the \
+5. Interviewer reaction - read the interviewer's next turn for engagement cues: deeper follow-up \
+questions, affirmations ("great", "that makes sense"), skepticism ("hmm, okay", pushing back, \
+challenging the number), abrupt topic changes, or cutting the answer short. Only report this if \
+the transcript actually shows the interviewer's next turn - if it's not there, write "No signal in \
+transcript" rather than guessing.
+6. The fix - 1-2 concrete sentences on exactly what to say or do differently next time, tied to the \
 specific missed framework step. Not generic advice.
 
-## Step 4 - Output format
+## Step 4 - Score PM skills across the whole interview
+Rate the candidate on each of these six skills, drawing on evidence from across all answers (not \
+just one question): Product Sense & Customer Empathy, Prioritization & Trade-off Reasoning, \
+Structured / Analytical Thinking, Communication & Clarity, Execution & Ownership, Leadership & \
+Influence. For each skill give a rating of Strong / Adequate / Weak / Not enough signal, 1-2 lines \
+of evidence quoted or paraphrased from the transcript, and a specific improvement action. Use "Not \
+enough signal" honestly when the interview didn't include questions that would surface that skill \
+(e.g. no behavioral question asked -> Execution & Ownership and Leadership & Influence likely have \
+no signal) - do not force a rating you don't have evidence for.
+
+## Step 5 - Read interviewer sentiment across the interview
+Using the per-question interviewer-reaction notes from Step 3, describe the overall trajectory: did \
+the interviewer's engagement warm up, cool off, stay flat, or swing based on specific answers? Name \
+the 1-2 answers that produced the clearest positive reaction and the 1-2 that produced the clearest \
+negative or disengaged reaction, with what specifically triggered each. If the transcript doesn't \
+give enough interviewer-side signal to say anything, state that plainly instead of inventing a trend.
+
+## Step 6 - Output format
 Clean markdown, headers + bullet points only, no prose paragraphs. Exactly this structure:
 
 # Interview Coaching Report
@@ -66,12 +100,27 @@ Clean markdown, headers + bullet points only, no prose paragraphs. Exactly this 
 - Top 3 recurring mistakes across the interview
 - Total filler-word count (breakdown by word)
 - Framework adherence by category
+- Interviewer sentiment trend: <1 line>
+
+## Skill Breakdown
+### <Skill name>
+- Rating: Strong / Adequate / Weak / Not enough signal
+- Evidence: ...
+- Improvement needed: ...
+
+(repeat for each of the 6 skills)
+
+## Interviewer Sentiment
+- Overall trend: ...
+- Positive moments: <question ref> - what triggered it
+- Negative/disengaged moments: <question ref> - what triggered it
 
 ## Q1 - <question text, truncated> [Category: ...]
 - Framework adherence: ...
 - Mistakes: ...
 - Sentiment flags: ...
 - Filler words: ...
+- Interviewer reaction: ...
 - Fix: ...
 
 (repeat per question)
@@ -140,8 +189,10 @@ st.title("🎯 AI PM Interview Coach")
 st.caption(
     "Paste or upload a product-manager interview transcript (Granola export, Zoom transcript, "
     "or any plain text) and get a bullet-point coaching report: framework adherence, mistakes, "
-    "sentiment red flags, filler words, and concrete fixes - per answer."
+    "sentiment red flags, filler words, and concrete fixes - per answer, plus a skill breakdown "
+    "and a read on how the interviewer was reacting."
 )
+st.caption("**Skills scored:** " + " · ".join(PM_SKILLS))
 
 tab_analyze, tab_log = st.tabs(["📝 Analyze Interview", "📈 Progress Log"])
 

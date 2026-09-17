@@ -20,6 +20,12 @@ analytics/metrics) and grades the answer against the framework interviewers actu
 per answer.
 - 🛠️ **Concrete fixes** — a specific rewrite tip per answer, tied to the exact framework step \
 that was missed.
+- 🧩 **Skill breakdown** — rates the candidate on 6 PM skills (Product Sense & Customer Empathy, \
+Prioritization & Trade-off Reasoning, Structured/Analytical Thinking, Communication & Clarity, \
+Execution & Ownership, Leadership & Influence) with evidence and an improvement action per skill.
+- 🎭 **Interviewer sentiment** — reads the interviewer's follow-ups and tone for engagement cues \
+(deeper probing, affirmations, skepticism, abrupt topic changes) and reports the overall trend plus \
+which answers triggered the clearest positive/negative reactions.
 - 📈 **Progress log across sessions** — every analysis is appended to a local `progress_log.md`; \
 a one-click summary surfaces issues that show up in 2+ sessions, so you know what to actually fix \
 before the next round.
@@ -85,6 +91,11 @@ labeled transcripts (`Interviewer: / Candidate:`) give more accurate results.
 
 ## ⚠️ Notes
 
-- This tool evaluates the **candidate's answers**, not the interviewer's technique.
+- This tool's primary focus is grading the **candidate's answers**; the interviewer-sentiment read \
+is a secondary signal inferred from the interviewer's visible reactions in the transcript, not an \
+evaluation of interviewer technique.
+- Interviewer sentiment and skill ratings are only as good as the signal in the transcript — with \
+no speaker labels or a very short transcript, expect more "No signal in transcript" / "Not enough \
+signal" results rather than fabricated ones.
 - Transcripts are sent to the Anthropic API for analysis and are not stored anywhere except your \
 local `progress_log.md` — nothing leaves your machine besides the API call itself.
