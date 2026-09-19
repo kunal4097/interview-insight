@@ -1,34 +1,40 @@
 # 🎯 AI PM Interview Coach
 
-An AI-powered coaching app that turns a product-manager interview transcript into a structured, \
-bullet-point feedback report — built with **Streamlit** and **Claude (Anthropic)**. Paste in a \
-transcript from a mock or real interview (Granola, Zoom, Otter, or any plain-text export) and get \
-back, per question: which answer framework applies, where you deviated from it, concrete mistakes, \
-sentiment red flags, filler-word counts, and exactly what to say differently next time. A running \
-log tracks which mistakes keep recurring across sessions, so prep actually compounds.
+An AI-powered PM interview assessment app — built with **Streamlit** and **Claude (Anthropic)**. \
+Give it interview notes and/or a transcript from a mock or real product-manager interview and get \
+back an anonymous, evidence-backed report: a rating dashboard across reasoning, communication, \
+delivery, and interviewer response; a question-by-question breakdown graded against the rubric that \
+actually fits each question type; a rewritten "improved answer"; a focused practice plan; and up to \
+three evidence-backed issues ranked by how much they hurt the answer. A running log tracks which \
+issues keep recurring across sessions, so prep actually compounds.
 
 ## 🚀 Features
 
-- 🧭 **Framework-aware grading** — classifies each question (product sense, resume/behavioral, \
-analytics/metrics) and grades the answer against the framework interviewers actually expect:
-  - **Product sense → CIRCLES** (Comprehend, Identify, Report, Cut, List, Evaluate, Summarize)
-  - **Resume/behavioral → STAR** (Situation, Task, Action, Result)
-  - **Analytics/metrics → Goal → Metric → Diagnose → Recommend**
-- 🚩 **Mistake & sentiment detection** — flags concrete errors and negative-sentiment moments \
-(hedging, contradiction, trailing off) with the exact spot in the answer, not vague feedback.
-- 🗣️ **Filler-word tracking** — counts "um", "like", "you know", "basically", and other filler \
-per answer.
-- 🛠️ **Concrete fixes** — a specific rewrite tip per answer, tied to the exact framework step \
-that was missed.
-- 🧩 **Skill breakdown** — rates the candidate on 6 PM skills (Product Sense & Customer Empathy, \
-Prioritization & Trade-off Reasoning, Structured/Analytical Thinking, Communication & Clarity, \
-Execution & Ownership, Leadership & Influence) with evidence and an improvement action per skill.
-- 🎭 **Interviewer sentiment** — reads the interviewer's follow-ups and tone for engagement cues \
-(deeper probing, affirmations, skepticism, abrupt topic changes) and reports the overall trend plus \
-which answers triggered the clearest positive/negative reactions.
-- 📈 **Progress log across sessions** — every analysis is appended to a local `progress_log.md`; \
-a one-click summary surfaces issues that show up in 2+ sessions, so you know what to actually fix \
-before the next round.
+- 🧭 **Rubric-matched grading** — recognizes 8 PM question types and applies the structure that \
+fits each one, without penalizing a candidate for skipping steps that don't apply:
+  - Product sense / design, Product improvement, Analytics / metrics, RCA / business \
+interpretation, Experimentation, Strategy / prioritization, Behavioral / experience, AI product \
+experience
+- 📊 **5-dimension rating dashboard** — PM reasoning, Language & communication, Verbal delivery, \
+Interviewer response, and Candidate-expressed sentiment, each scored independently (1–5, or \
+"Not assessable") with an evidence excerpt and a confidence level (High/Medium/Low) — no decimals, \
+no percentiles, no hiring probabilities.
+- 🧠 **"Why" assessment** — every major choice is classified as Stated, Explained, or Justified, \
+so vague-but-confident answers don't get credit they haven't earned.
+- 🎭 **Interviewer response, read honestly** — labeled Positive / Mixed / Concern expressed / \
+Neutral / Insufficient evidence, backed by the exact observable basis in the transcript. Never \
+infers hiring likelihood from politeness or interview length.
+- ✍️ **Improved answer rewrite** — a concise, labeled rewrite of a weak answer showing what \
+"good" looks like, without inventing experience or results the candidate didn't have.
+- 🎯 **Practice plan** — up to three focused exercises with a measurable success check each.
+- 🚨 **Major issues found** — up to three evidence-backed issues, ranked by impact on the answer \
+(not by how easy they are to count), each with the evidence, the impact, a better approach, and a \
+practice action.
+- 🕵️ **Anonymous by design** — names, contact details, employers, and identifying background are \
+omitted from every report.
+- 📈 **Progress log across sessions** — every assessment appends its Snapshot, Rating Dashboard, \
+and Major Issues to a local `progress_log.md`; a one-click summary surfaces what recurs across 2+ \
+sessions, so you know what to actually fix before the next round.
 - 📥 **Exportable reports** — download any report or the full log as markdown.
 
 ## 🛠️ Tech Stack
@@ -45,7 +51,7 @@ before the next round.
    cd ai_pm_interview_coach_agent
    ```
 
-2. **Install dependencies:**
+2. **Install dependencies** (requires Python 3.10+):
    ```bash
    pip install -r requirements.txt
    ```
@@ -67,35 +73,40 @@ export ANTHROPIC_API_KEY=your_key_here
 
 ## 🧑‍💻 Usage
 
-1. **Get a transcript** — export or copy the text of a PM interview (mock or real). Granola, \
-Zoom, Otter, and most call-recording tools can export a plain-text or `.txt` transcript.
-2. **Paste or upload it** in the "Analyze Interview" tab.
-3. Click **Analyze Interview** — Claude segments the transcript into Q&A pairs, classifies each \
-question, and grades the answer.
-4. **Read the report** — an executive summary up top, then a per-question breakdown with \
-framework adherence, mistakes, sentiment flags, filler words, and a fix. Download it as markdown.
-5. Check the **Progress Log** tab after a few sessions and click **Summarize recurring issues** \
+1. **Gather what you have** — a summary (e.g. Granola's AI-generated notes), a transcript, or \
+both. You need at least one; more context (target role, round type, reported outcome) sharpens the \
+assessment but isn't required.
+2. Open the **Additional context** expander to add the interview summary, target role, question \
+context, and candidate-reported outcome (advanced / offer / rejected / no news yet) — all optional.
+3. Paste or upload the **transcript**.
+4. Click **Run Assessment**.
+5. **Read the report** — Snapshot, then the Rating Dashboard, then a question-by-question \
+breakdown, communication notes, an improved-answer rewrite, a practice plan, and the top issues \
+found. Download it as markdown.
+6. Check the **Progress Log** tab after a few sessions and click **Summarize recurring issues** \
 to see what keeps costing you points.
 
 ## 📝 Example Input
 
-The app works on any transcript with enough turn-taking to tell questions from answers, e.g.:
+The app works on any summary or transcript with enough detail to reconstruct the questions asked, \
+e.g.:
 
 ```
 Interviewer: Let's start with a product sense question. How would you improve Spotify for teenagers?
 Candidate: Um, so I guess I'd first look at, like, what teenagers actually want from music...
 ```
 
-No speaker labels? The app will still do its best to separate questions from answers, but \
-labeled transcripts (`Interviewer: / Candidate:`) give more accurate results.
+No speaker labels or only a summary, no raw transcript? The app still runs, but rates verbal \
+delivery and some communication dimensions as "Not assessable" rather than guessing — labeled \
+transcripts (`Interviewer: / Candidate:`) and a summary together give the most accurate results.
 
 ## ⚠️ Notes
 
-- This tool's primary focus is grading the **candidate's answers**; the interviewer-sentiment read \
-is a secondary signal inferred from the interviewer's visible reactions in the transcript, not an \
-evaluation of interviewer technique.
-- Interviewer sentiment and skill ratings are only as good as the signal in the transcript — with \
-no speaker labels or a very short transcript, expect more "No signal in transcript" / "Not enough \
-signal" results rather than fabricated ones.
-- Transcripts are sent to the Anthropic API for analysis and are not stored anywhere except your \
-local `progress_log.md` — nothing leaves your machine besides the API call itself.
+- The interviewer-response dimension is read from the interviewer's *visible reactions* in the \
+transcript (follow-ups, affirmations, skepticism) — it is not an evaluation of interviewer \
+technique, and it never infers a hiring decision unless the interviewer states one explicitly.
+- Every rating requires evidence; where the transcript/summary doesn't support one, the report says \
+"Not assessable" instead of guessing.
+- The known outcome (if you provide one) is tracked separately and never used to adjust ratings.
+- Notes/transcripts are sent to the Anthropic API for analysis and are not stored anywhere except \
+your local `progress_log.md` — nothing leaves your machine besides the API call itself.
