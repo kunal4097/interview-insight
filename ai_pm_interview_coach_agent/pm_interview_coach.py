@@ -8,6 +8,8 @@ answer rewrite; a practice plan; and the top evidence-backed issues to fix.
 Tracks recurring issues across sessions in a local log.
 """
 
+import asyncio
+import json
 import os
 from datetime import datetime
 
@@ -18,6 +20,7 @@ from anthropic import Anthropic
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(APP_DIR, "progress_log.md")
 GRANOLA_BASE_URL = "https://public-api.granola.ai/v1"
+GRANOLA_MCP_URL = "https://mcp.granola.ai/mcp"
 
 MODELS = {
     "Claude Sonnet 5 (recommended)": "claude-sonnet-5",
@@ -330,6 +333,183 @@ def format_granola_transcript(items: list) -> str:
     return "\n".join(lines)
 
 
+# --- Granola MCP (OAuth) connection -----------------------------------------------------
+# Alternative to the API-key flow above: signs in via Granola's MCP server using the same
+# browser OAuth handshake Claude Code/Claude.ai/ChatGPT use, so it works on any Granola plan
+# (including Basic) with no pasted key. Granola hasn't published exact MCP tool schemas for
+# third-party clients, so rather than guess parameter names, this connects, discovers each
+# tool's real input schema at runtime, and lets you call tools directly and feed the raw
+# result into the assessment - a transparent tool console, not a guessed parser.
+#
+# The "mcp" package is intentionally NOT in requirements.txt - it pulls in a fairly heavy
+# dependency tree (starlette, uvicorn, pyjwt, etc.) that most users of this app won't need.
+# It's imported lazily, only when this connection method is actually used.
+
+def _import_mcp_client():
+    try:
+        import httpx2
+        from mcp import ClientSession
+        from mcp.client.auth import OAuthClientProvider
+        from mcp.client.streamable_http import streamable_http_client
+        from mcp.shared.auth import AuthorizationCodeResult, OAuthClientMetadata
+    except ImportError as e:
+        raise GranolaAPIError(
+            0,
+            "The 'mcp' package isn't installed. Run `pip install mcp` to enable "
+            f"Granola sign-in via MCP. ({e})",
+        )
+    return httpx2, ClientSession, OAuthClientProvider, streamable_http_client, AuthorizationCodeResult, OAuthClientMetadata
+
+
+class _LoopbackCallbackHandler:
+    """Factory for a BaseHTTPRequestHandler that captures one OAuth redirect's query
+    params and hands them to result_queue - the SDK doesn't ship a loopback server, so
+    this app provides its own for the native-app-style redirect Granola's MCP OAuth expects."""
+
+    @staticmethod
+    def make(result_queue):
+        from http.server import BaseHTTPRequestHandler
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                from urllib.parse import parse_qs, urlparse
+
+                params = parse_qs(urlparse(self.path).query)
+                result_queue.put(params)
+                body = b"<html><body><p>Signed in with Granola. You can close this tab and return to the app.</p></body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, format, *args):
+                pass
+
+        return Handler
+
+
+def _run_loopback_server(ready_event, port_holder: dict, result_queue) -> None:
+    from http.server import HTTPServer
+
+    handler_cls = _LoopbackCallbackHandler.make(result_queue)
+    httpd = HTTPServer(("127.0.0.1", 0), handler_cls)
+    port_holder["port"] = httpd.server_address[1]
+    ready_event.set()
+    httpd.timeout = 180
+    httpd.handle_request()
+    httpd.server_close()
+
+
+class StreamlitMCPTokenStorage:
+    """TokenStorage backed by st.session_state - memory-only for this browser session,
+    cleared on Disconnect. Implements the TokenStorage protocol structurally (get_tokens/
+    set_tokens/get_client_info/set_client_info); no base class to inherit from."""
+
+    async def get_tokens(self):
+        return st.session_state.get("granola_mcp_tokens")
+
+    async def set_tokens(self, tokens) -> None:
+        st.session_state["granola_mcp_tokens"] = tokens
+
+    async def get_client_info(self):
+        return st.session_state.get("granola_mcp_client_info")
+
+    async def set_client_info(self, client_info) -> None:
+        st.session_state["granola_mcp_client_info"] = client_info
+
+
+def _extract_tool_text(result) -> str:
+    parts = []
+    for block in result.content or []:
+        text = getattr(block, "text", None)
+        if text:
+            parts.append(text)
+    return "\n".join(parts)
+
+
+async def _granola_mcp_session(work_fn):
+    """Opens one OAuth-authenticated MCP session against Granola and runs work_fn(session,
+    tools_by_name) inside it. Reuses stored tokens from StreamlitMCPTokenStorage when valid;
+    only opens the browser for the loopback redirect when no valid token exists yet."""
+    import queue
+    import threading
+    import webbrowser
+
+    httpx2, ClientSession, OAuthClientProvider, streamable_http_client, AuthorizationCodeResult, OAuthClientMetadata = _import_mcp_client()
+
+    result_queue: queue.Queue = queue.Queue()
+    port_holder: dict = {}
+    ready_event = threading.Event()
+    server_thread = threading.Thread(target=_run_loopback_server, args=(ready_event, port_holder, result_queue), daemon=True)
+    server_thread.start()
+    if not ready_event.wait(timeout=5):
+        raise GranolaAPIError(0, "Couldn't start the local sign-in listener.")
+    redirect_uri = f"http://127.0.0.1:{port_holder['port']}/callback"
+
+    async def redirect_handler(authorization_url: str) -> None:
+        webbrowser.open(authorization_url)
+
+    async def callback_handler():
+        try:
+            params = await asyncio.to_thread(result_queue.get, True, 180)
+        except queue.Empty:
+            raise GranolaAPIError(0, "Timed out waiting for Granola sign-in.")
+        code = (params.get("code") or [None])[0]
+        state = (params.get("state") or [None])[0]
+        iss = (params.get("iss") or [None])[0]
+        if not code:
+            raise GranolaAPIError(0, "Granola sign-in was cancelled or didn't return an authorization code.")
+        return AuthorizationCodeResult(code=code, state=state, iss=iss)
+
+    client_metadata = OAuthClientMetadata(
+        client_name="PM Interview Coach",
+        redirect_uris=[redirect_uri],
+        grant_types=["authorization_code", "refresh_token"],
+        response_types=["code"],
+    )
+    oauth = OAuthClientProvider(
+        server_url=GRANOLA_MCP_URL,
+        client_metadata=client_metadata,
+        storage=StreamlitMCPTokenStorage(),
+        redirect_handler=redirect_handler,
+        callback_handler=callback_handler,
+    )
+
+    async with httpx2.AsyncClient(auth=oauth, timeout=60) as http_client:
+        async with streamable_http_client(GRANOLA_MCP_URL, http_client=http_client) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                tools_result = await session.list_tools()
+                tools_by_name = {t.name: t for t in tools_result.tools}
+                return await work_fn(session, tools_by_name)
+
+
+def granola_mcp_connect() -> list:
+    """Signs in (or reuses a stored session) and returns the list of available tool names."""
+    async def work(session, tools_by_name):
+        st.session_state["granola_mcp_tool_schemas"] = {
+            name: tool.input_schema for name, tool in tools_by_name.items()
+        }
+        return list(tools_by_name.keys())
+    return asyncio.run(_granola_mcp_session(work))
+
+
+def granola_mcp_call_tool(tool_name: str, arguments: dict) -> dict:
+    """Calls one tool on a fresh authenticated session (tokens are reused; only the network
+    round-trip is new) and returns {"structured": ..., "text": ..., "is_error": bool}."""
+    async def work(session, tools_by_name):
+        if tool_name not in tools_by_name:
+            raise GranolaAPIError(0, f"Tool '{tool_name}' is not available.")
+        result = await session.call_tool(tool_name, arguments)
+        return {
+            "structured": result.structured_content,
+            "text": _extract_tool_text(result),
+            "is_error": bool(result.is_error),
+        }
+    return asyncio.run(_granola_mcp_session(work))
+
+
 def build_user_content(summary: str, transcript: str, target_role: str, question_context: str, outcome: str) -> str:
     parts = [
         "## Interview Summary",
@@ -481,141 +661,255 @@ with tab_analyze:
     render_last_report("analyze")
 
 with tab_granola:
-    if not st.session_state.get("granola_connected"):
-        st.caption(
-            "Requires a Granola Business or Enterprise plan - API access isn't available on the "
-            "free Basic plan."
-        )
-        granola_key_input = st.text_input(
-            "Granola API key",
-            type="password",
-            placeholder="grn_...",
-            help="Generate one in the Granola desktop app, under Settings → API access.",
-        )
-        if st.button("Connect", type="primary"):
-            if not granola_key_input:
-                st.error("Enter your Granola API key first.")
-            else:
-                with st.spinner("Checking your key..."):
+    connection_method = st.radio(
+        "Connection method",
+        ["API key (Business/Enterprise plan)", "Sign in via MCP (any plan, experimental)"],
+        horizontal=True,
+    )
+
+    if connection_method == "API key (Business/Enterprise plan)":
+        if not st.session_state.get("granola_connected"):
+            st.caption(
+                "Requires a Granola Business or Enterprise plan - API access isn't available on "
+                "the free Basic plan."
+            )
+            granola_key_input = st.text_input(
+                "Granola API key",
+                type="password",
+                placeholder="grn_...",
+                help="Generate one in the Granola desktop app, under Settings → API access.",
+            )
+            if st.button("Connect", type="primary"):
+                if not granola_key_input:
+                    st.error("Enter your Granola API key first.")
+                else:
+                    with st.spinner("Checking your key..."):
+                        try:
+                            granola_request(granola_key_input, "/notes", {"page_size": 1})
+                        except GranolaAPIError as e:
+                            st.error(str(e))
+                        else:
+                            st.session_state["granola_connected"] = True
+                            st.session_state["granola_key"] = granola_key_input
+                            for k in ["granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
+                                st.session_state.pop(k, None)
+                            st.rerun()
+        else:
+            granola_key = st.session_state["granola_key"]
+
+            top_left, top_right = st.columns([4, 1])
+            with top_right:
+                if st.button("Disconnect", key="granola_key_disconnect"):
+                    for k in ["granola_connected", "granola_key", "granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
+                        st.session_state.pop(k, None)
+                    st.rerun()
+
+            if "granola_folders" not in st.session_state:
+                try:
+                    st.session_state["granola_folders"] = granola_list_all_folders(granola_key)
+                except GranolaAPIError as e:
+                    st.session_state["granola_folders"] = []
+                    st.warning(f"Couldn't load folders: {e}")
+
+            folder_options = {"All folders": None}
+            for f in st.session_state["granola_folders"]:
+                folder_options[f["name"]] = f["id"]
+            with top_left:
+                folder_label = st.selectbox("Folder", list(folder_options.keys()))
+            selected_folder_id = folder_options[folder_label]
+
+            if "granola_notes" not in st.session_state or st.session_state.get("granola_folder_id") != selected_folder_id:
+                try:
+                    notes, has_more, cursor = granola_list_notes(granola_key, folder_id=selected_folder_id, page_size=20)
+                except GranolaAPIError as e:
+                    st.error(str(e))
+                    notes, has_more, cursor = [], False, None
+                st.session_state["granola_notes"] = notes
+                st.session_state["granola_has_more"] = has_more
+                st.session_state["granola_cursor"] = cursor
+                st.session_state["granola_folder_id"] = selected_folder_id
+
+            search = st.text_input("Filter loaded interviews by title", placeholder="Search...")
+            notes = st.session_state["granola_notes"]
+            if search:
+                notes = [n for n in notes if search.lower() in (n.get("title") or "").lower()]
+
+            if not notes:
+                st.info("No interviews found. Only meetings with a generated Granola summary appear here.")
+
+            for note in notes:
+                title = note.get("title") or "Untitled interview"
+                created = (note.get("created_at") or "")[:10]
+                owner = (note.get("owner") or {}).get("name") or (note.get("owner") or {}).get("email") or ""
+                row = st.columns([5, 2, 2, 1])
+                row[0].markdown(f"**{title}**")
+                row[1].caption(created)
+                row[2].caption(owner)
+                if row[3].button("Select", key=f"select_{note['id']}"):
+                    with st.spinner("Fetching interview details..."):
+                        try:
+                            st.session_state["granola_selected_note"] = granola_get_note(granola_key, note["id"])
+                        except GranolaAPIError as e:
+                            st.error(str(e))
+
+            if st.session_state.get("granola_has_more"):
+                if st.button("Load more interviews"):
                     try:
-                        granola_request(granola_key_input, "/notes", {"page_size": 1})
+                        more_notes, has_more, cursor = granola_list_notes(
+                            granola_key, folder_id=selected_folder_id, cursor=st.session_state["granola_cursor"], page_size=20
+                        )
+                        st.session_state["granola_notes"] = st.session_state["granola_notes"] + more_notes
+                        st.session_state["granola_has_more"] = has_more
+                        st.session_state["granola_cursor"] = cursor
+                        st.rerun()
+                    except GranolaAPIError as e:
+                        st.error(str(e))
+
+            selected_note = st.session_state.get("granola_selected_note")
+            if selected_note:
+                st.divider()
+                st.subheader(selected_note.get("title") or "Untitled interview")
+
+                g_summary = selected_note.get("summary_markdown") or selected_note.get("summary_text") or ""
+                transcript_items = selected_note.get("transcript")
+                g_transcript = format_granola_transcript(transcript_items) if transcript_items else ""
+
+                if g_summary:
+                    st.markdown("**Summary**")
+                    st.markdown(g_summary)
+                else:
+                    st.caption("No summary available for this interview.")
+
+                if not g_transcript:
+                    st.caption(
+                        "No transcript for this interview - the assessment will run on the summary "
+                        "alone. Verbal-delivery ratings will come back \"Not assessable.\""
+                    )
+
+                with st.expander("Additional context (optional, but improves the assessment)"):
+                    g_col1, g_col2 = st.columns(2)
+                    with g_col1:
+                        g_target_role = st.text_input("Target role", key="g_target_role", placeholder="e.g. Senior PM, Growth")
+                    with g_col2:
+                        g_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="g_outcome")
+                    g_question_context = st.text_area("Question context", key="g_question_context", height=80)
+                    g_outcome_other = ""
+                    if g_outcome == "Other (describe below)":
+                        g_outcome_other = st.text_input("Describe the outcome", key="g_outcome_other")
+
+                if st.button("Run Assessment on this interview", type="primary", use_container_width=True):
+                    g_resolved_outcome = g_outcome_other.strip() if g_outcome == "Other (describe below)" and g_outcome_other.strip() else g_outcome
+                    session_label = selected_note.get("title") or "Granola interview"
+                    run_assessment_flow(api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, session_label)
+
+                render_last_report("granola")
+
+    else:  # Sign in via MCP
+        st.caption(
+            "Works on any Granola plan, including Basic - no API key needed. Granola hasn't "
+            "published exact tool parameter schemas for third-party MCP clients, so this connects "
+            "and shows you the real tool list and their input schemas, rather than guessing at a "
+            "polished parsed view. Call a tool below and feed its raw output straight into the "
+            "assessment."
+        )
+
+        if not st.session_state.get("granola_mcp_tools"):
+            if st.button("Sign in with Granola", type="primary"):
+                with st.spinner("Opening Granola in your browser - approve access there to continue (up to 3 minutes)..."):
+                    try:
+                        tools = granola_mcp_connect()
                     except GranolaAPIError as e:
                         st.error(str(e))
                     else:
-                        st.session_state["granola_connected"] = True
-                        st.session_state["granola_key"] = granola_key_input
-                        for k in ["granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
-                            st.session_state.pop(k, None)
+                        st.session_state["granola_mcp_tools"] = tools
                         st.rerun()
-    else:
-        granola_key = st.session_state["granola_key"]
+        else:
+            tool_names = st.session_state["granola_mcp_tools"]
+            tool_schemas = st.session_state.get("granola_mcp_tool_schemas", {})
 
-        top_left, top_right = st.columns([4, 1])
-        with top_right:
-            if st.button("Disconnect"):
-                for k in ["granola_connected", "granola_key", "granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
-                    st.session_state.pop(k, None)
-                st.rerun()
-
-        if "granola_folders" not in st.session_state:
-            try:
-                st.session_state["granola_folders"] = granola_list_all_folders(granola_key)
-            except GranolaAPIError as e:
-                st.session_state["granola_folders"] = []
-                st.warning(f"Couldn't load folders: {e}")
-
-        folder_options = {"All folders": None}
-        for f in st.session_state["granola_folders"]:
-            folder_options[f["name"]] = f["id"]
-        with top_left:
-            folder_label = st.selectbox("Folder", list(folder_options.keys()))
-        selected_folder_id = folder_options[folder_label]
-
-        if "granola_notes" not in st.session_state or st.session_state.get("granola_folder_id") != selected_folder_id:
-            try:
-                notes, has_more, cursor = granola_list_notes(granola_key, folder_id=selected_folder_id, page_size=20)
-            except GranolaAPIError as e:
-                st.error(str(e))
-                notes, has_more, cursor = [], False, None
-            st.session_state["granola_notes"] = notes
-            st.session_state["granola_has_more"] = has_more
-            st.session_state["granola_cursor"] = cursor
-            st.session_state["granola_folder_id"] = selected_folder_id
-
-        search = st.text_input("Filter loaded interviews by title", placeholder="Search...")
-        notes = st.session_state["granola_notes"]
-        if search:
-            notes = [n for n in notes if search.lower() in (n.get("title") or "").lower()]
-
-        if not notes:
-            st.info("No interviews found. Only meetings with a generated Granola summary appear here.")
-
-        for note in notes:
-            title = note.get("title") or "Untitled interview"
-            created = (note.get("created_at") or "")[:10]
-            owner = (note.get("owner") or {}).get("name") or (note.get("owner") or {}).get("email") or ""
-            row = st.columns([5, 2, 2, 1])
-            row[0].markdown(f"**{title}**")
-            row[1].caption(created)
-            row[2].caption(owner)
-            if row[3].button("Select", key=f"select_{note['id']}"):
-                with st.spinner("Fetching interview details..."):
-                    try:
-                        st.session_state["granola_selected_note"] = granola_get_note(granola_key, note["id"])
-                    except GranolaAPIError as e:
-                        st.error(str(e))
-
-        if st.session_state.get("granola_has_more"):
-            if st.button("Load more interviews"):
-                try:
-                    more_notes, has_more, cursor = granola_list_notes(
-                        granola_key, folder_id=selected_folder_id, cursor=st.session_state["granola_cursor"], page_size=20
-                    )
-                    st.session_state["granola_notes"] = st.session_state["granola_notes"] + more_notes
-                    st.session_state["granola_has_more"] = has_more
-                    st.session_state["granola_cursor"] = cursor
+            top_left, top_right = st.columns([4, 1])
+            with top_left:
+                st.success(f"Connected via MCP. {len(tool_names)} tools available.")
+            with top_right:
+                if st.button("Disconnect", key="granola_mcp_disconnect"):
+                    for k in ["granola_mcp_tools", "granola_mcp_tool_schemas", "granola_mcp_tokens", "granola_mcp_client_info", "granola_mcp_last_result"]:
+                        st.session_state.pop(k, None)
                     st.rerun()
-                except GranolaAPIError as e:
-                    st.error(str(e))
 
-        selected_note = st.session_state.get("granola_selected_note")
-        if selected_note:
-            st.divider()
-            st.subheader(selected_note.get("title") or "Untitled interview")
+            st.subheader("Call a tool")
+            tool_name = st.selectbox("Tool", tool_names, key="mcp_tool_name")
+            st.caption("Input schema (from Granola's MCP server, not guessed):")
+            st.json(tool_schemas.get(tool_name, {}))
+            args_json = st.text_area(
+                "Arguments (JSON)",
+                value="{}",
+                height=100,
+                help="Match property names from the schema above. Most list/read tools accept {} for defaults.",
+            )
+            if st.button("Call tool", type="primary"):
+                try:
+                    arguments = json.loads(args_json) if args_json.strip() else {}
+                except json.JSONDecodeError as e:
+                    st.error(f"Arguments aren't valid JSON: {e}")
+                else:
+                    with st.spinner(f"Calling {tool_name}..."):
+                        try:
+                            result = granola_mcp_call_tool(tool_name, arguments)
+                        except GranolaAPIError as e:
+                            st.error(str(e))
+                        else:
+                            st.session_state["granola_mcp_last_result"] = result
 
-            g_summary = selected_note.get("summary_markdown") or selected_note.get("summary_text") or ""
-            transcript_items = selected_note.get("transcript")
-            g_transcript = format_granola_transcript(transcript_items) if transcript_items else ""
+            last_result = st.session_state.get("granola_mcp_last_result")
+            if last_result:
+                st.divider()
+                if last_result["is_error"]:
+                    st.error(last_result["text"] or "The tool call returned an error.")
+                else:
+                    if last_result["structured"] is not None:
+                        st.markdown("**Structured result**")
+                        st.json(last_result["structured"])
+                    if last_result["text"]:
+                        st.markdown("**Text result**")
+                        st.text_area("Raw text", value=last_result["text"], height=200, key="mcp_raw_text_display")
 
-            if g_summary:
-                st.markdown("**Summary**")
-                st.markdown(g_summary)
-            else:
-                st.caption("No summary available for this interview.")
+                mcp_pull_text = last_result.get("text") or ""
+                if mcp_pull_text:
+                    pull_col1, pull_col2 = st.columns(2)
+                    with pull_col1:
+                        use_as_summary = st.button("Use as summary for assessment", use_container_width=True)
+                    with pull_col2:
+                        use_as_transcript = st.button("Use as transcript for assessment", use_container_width=True)
+                    if use_as_summary:
+                        st.session_state["mcp_pulled_summary"] = mcp_pull_text
+                    if use_as_transcript:
+                        st.session_state["mcp_pulled_transcript"] = mcp_pull_text
 
-            if not g_transcript:
-                st.caption(
-                    "No transcript for this interview - the assessment will run on the summary "
-                    "alone. Verbal-delivery ratings will come back \"Not assessable.\""
+            if st.session_state.get("mcp_pulled_summary") or st.session_state.get("mcp_pulled_transcript"):
+                st.divider()
+                st.subheader("Run assessment on the pulled content")
+                mcp_summary = st.text_area(
+                    "Summary", value=st.session_state.get("mcp_pulled_summary", ""), height=120, key="mcp_summary_field"
                 )
+                mcp_transcript = st.text_area(
+                    "Transcript", value=st.session_state.get("mcp_pulled_transcript", ""), height=200, key="mcp_transcript_field"
+                )
+                with st.expander("Additional context (optional, but improves the assessment)"):
+                    mcp_col1, mcp_col2 = st.columns(2)
+                    with mcp_col1:
+                        mcp_target_role = st.text_input("Target role", key="mcp_target_role", placeholder="e.g. Senior PM, Growth")
+                    with mcp_col2:
+                        mcp_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="mcp_outcome")
+                    mcp_question_context = st.text_area("Question context", key="mcp_question_context", height=80)
+                    mcp_outcome_other = ""
+                    if mcp_outcome == "Other (describe below)":
+                        mcp_outcome_other = st.text_input("Describe the outcome", key="mcp_outcome_other")
 
-            with st.expander("Additional context (optional, but improves the assessment)"):
-                g_col1, g_col2 = st.columns(2)
-                with g_col1:
-                    g_target_role = st.text_input("Target role", key="g_target_role", placeholder="e.g. Senior PM, Growth")
-                with g_col2:
-                    g_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="g_outcome")
-                g_question_context = st.text_area("Question context", key="g_question_context", height=80)
-                g_outcome_other = ""
-                if g_outcome == "Other (describe below)":
-                    g_outcome_other = st.text_input("Describe the outcome", key="g_outcome_other")
+                if st.button("Run Assessment on this content", type="primary", use_container_width=True):
+                    mcp_resolved_outcome = mcp_outcome_other.strip() if mcp_outcome == "Other (describe below)" and mcp_outcome_other.strip() else mcp_outcome
+                    run_assessment_flow(api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, "Granola interview (via MCP)")
 
-            if st.button("Run Assessment on this interview", type="primary", use_container_width=True):
-                g_resolved_outcome = g_outcome_other.strip() if g_outcome == "Other (describe below)" and g_outcome_other.strip() else g_outcome
-                session_label = selected_note.get("title") or "Granola interview"
-                run_assessment_flow(api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, session_label)
-
-            render_last_report("granola")
+                render_last_report("granola_mcp")
 
 with tab_log:
     log_content = read_log()
