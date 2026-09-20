@@ -36,11 +36,16 @@ omitted from every report.
 and Major Issues to a local `progress_log.md`; a one-click summary surfaces what recurs across 2+ \
 sessions, so you know what to actually fix before the next round.
 - 📥 **Exportable reports** — download any report or the full log as markdown.
+- 🔗 **Connect Granola directly** — a "Connect Granola" tab talks to Granola's public API: paste an
+API key, browse your recorded interviews by folder, pick one, and its summary/transcript flow
+straight into the assessment. No copy-pasting transcripts required. Requires a Granola Business or
+Enterprise plan (see Notes below).
 
 ## 🛠️ Tech Stack
 
 - **Frontend:** Streamlit (Python)
 - **AI Model:** Claude (Anthropic API) — Sonnet 5, Opus 5, or Haiku 4.5, selectable in the sidebar
+- **Granola integration:** Granola's public REST API (`https://public-api.granola.ai/v1`) via `requests`
 - **Storage:** local markdown log file (`progress_log.md`) — no database, no external services
 
 ## 📦 Installation
@@ -73,6 +78,8 @@ export ANTHROPIC_API_KEY=your_key_here
 
 ## 🧑‍💻 Usage
 
+**Option A — paste or upload manually (Run Assessment tab)**
+
 1. **Gather what you have** — a summary (e.g. Granola's AI-generated notes), a transcript, or \
 both. You need at least one; more context (target role, round type, reported outcome) sharpens the \
 assessment but isn't required.
@@ -80,6 +87,21 @@ assessment but isn't required.
 context, and candidate-reported outcome (advanced / offer / rejected / no news yet) — all optional.
 3. Paste or upload the **transcript**.
 4. Click **Run Assessment**.
+
+**Option B — connect Granola (Connect Granola tab)**
+
+1. Paste your **Granola API key** (`grn_...` — generate one in the Granola desktop app under \
+Settings → API access) and click **Connect**. The app makes one live call to verify the key before \
+proceeding.
+2. **Browse your interviews** — filter by folder, search loaded titles, and click **Select** on \
+one. Only meetings with a generated Granola summary appear, per Granola's API.
+3. The interview's **summary and transcript load automatically** (the app pages through Granola's \
+transcript endpoint itself when a transcript is too large to return inline — no manual work).
+4. Add optional context (target role, question context, outcome), then click **Run Assessment on \
+this interview**.
+
+**Then, either way:**
+
 5. **Read the report** — Snapshot, then the Rating Dashboard, then a question-by-question \
 breakdown, communication notes, an improved-answer rewrite, a practice plan, and the top issues \
 found. Download it as markdown.
@@ -109,4 +131,13 @@ technique, and it never infers a hiring decision unless the interviewer states o
 "Not assessable" instead of guessing.
 - The known outcome (if you provide one) is tracked separately and never used to adjust ratings.
 - Notes/transcripts are sent to the Anthropic API for analysis and are not stored anywhere except \
-your local `progress_log.md` — nothing leaves your machine besides the API call itself.
+your local `progress_log.md` — nothing leaves your machine besides the API calls themselves \
+(Anthropic, and Granola if you connect it).
+- **Granola API access requires a Business or Enterprise plan.** The free Basic plan doesn't \
+support the public API at all (only Granola's MCP server, which is notes-only on Basic) — on \
+Basic, use Option A above instead.
+- Granola only offers key-based authentication for third-party apps like this one — there's no \
+"Sign in with Granola" OAuth flow outside of MCP clients (Claude, ChatGPT, Cursor), so a pasted API \
+key is the only way to connect here.
+- The Granola API key is held in Streamlit session state only (not written to disk) and is sent \
+solely to `public-api.granola.ai`.

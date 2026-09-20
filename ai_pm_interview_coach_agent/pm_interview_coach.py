@@ -11,11 +11,13 @@ Tracks recurring issues across sessions in a local log.
 import os
 from datetime import datetime
 
+import requests
 import streamlit as st
 from anthropic import Anthropic
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(APP_DIR, "progress_log.md")
+GRANOLA_BASE_URL = "https://public-api.granola.ai/v1"
 
 MODELS = {
     "Claude Sonnet 5 (recommended)": "claude-sonnet-5",
@@ -227,6 +229,107 @@ def call_claude(client: Anthropic, model: str, system: str, user_content: str) -
     return "".join(block.text for block in response.content if block.type == "text")
 
 
+class GranolaAPIError(Exception):
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def granola_request(api_key: str, path: str, params: dict | None = None) -> dict:
+    try:
+        resp = requests.get(
+            f"{GRANOLA_BASE_URL}{path}",
+            headers={"Authorization": f"Bearer {api_key}"},
+            params=params or {},
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        raise GranolaAPIError(0, f"Network error reaching Granola: {e}")
+
+    if resp.status_code == 200:
+        return resp.json()
+    if resp.status_code == 401:
+        raise GranolaAPIError(401, "Invalid Granola API key.")
+    if resp.status_code == 403:
+        raise GranolaAPIError(403, "This key doesn't have access. Granola API access requires a Business or Enterprise plan.")
+    if resp.status_code == 404:
+        raise GranolaAPIError(404, "Not found.")
+    if resp.status_code == 413:
+        raise GranolaAPIError(413, "TRANSCRIPT_TOO_LARGE")
+    if resp.status_code == 429:
+        raise GranolaAPIError(429, "Rate limited by Granola. Wait a few seconds and try again.")
+    raise GranolaAPIError(resp.status_code, f"Granola API error ({resp.status_code}).")
+
+
+def granola_list_notes(api_key: str, folder_id: str | None = None, cursor: str | None = None, page_size: int = 20):
+    params: dict = {"page_size": page_size}
+    if folder_id:
+        params["folder_id"] = folder_id
+    if cursor:
+        params["cursor"] = cursor
+    data = granola_request(api_key, "/notes", params)
+    return data["notes"], data["hasMore"], data["cursor"]
+
+
+def granola_list_all_folders(api_key: str, cap: int = 200) -> list:
+    folders, cursor = [], None
+    while True:
+        params = {"page_size": 30}
+        if cursor:
+            params["cursor"] = cursor
+        data = granola_request(api_key, "/folders", params)
+        folders.extend(data["folders"])
+        cursor = data["cursor"]
+        if not data["hasMore"] or not cursor or len(folders) >= cap:
+            break
+    return folders
+
+
+def granola_get_transcript_full(api_key: str, note_id: str, cap_items: int = 4000) -> list:
+    items, cursor = [], None
+    while True:
+        params: dict = {"page_size": 100}
+        if cursor:
+            params["cursor"] = cursor
+        data = granola_request(api_key, f"/notes/{note_id}/transcript", params)
+        items.extend(data["transcript"])
+        cursor = data["cursor"]
+        if not data["hasMore"] or not cursor or len(items) >= cap_items:
+            break
+    return items
+
+
+def granola_get_note(api_key: str, note_id: str) -> dict:
+    """Fetch a note with its transcript. Falls back to the paginated transcript
+    endpoint when the inline transcript is too large for Get Note to return."""
+    try:
+        return granola_request(api_key, f"/notes/{note_id}", {"include": "transcript"})
+    except GranolaAPIError as e:
+        if e.status_code != 413:
+            raise
+        note = granola_request(api_key, f"/notes/{note_id}", {})
+        note["transcript"] = granola_get_transcript_full(api_key, note_id)
+        return note
+
+
+def format_granola_transcript(items: list) -> str:
+    lines = []
+    attribution_labels = {"me": "You", "them": "Other speaker"}
+    for item in items:
+        speaker = item.get("speaker") or {}
+        attribution = speaker.get("attribution")
+        label = (
+            speaker.get("name")
+            or (attribution_labels.get(attribution) if attribution else None)
+            or speaker.get("diarization_label")
+            or "Speaker"
+        )
+        text = (item.get("text") or "").strip()
+        if text:
+            lines.append(f"{label}: {text}")
+    return "\n".join(lines)
+
+
 def build_user_content(summary: str, transcript: str, target_role: str, question_context: str, outcome: str) -> str:
     parts = [
         "## Interview Summary",
@@ -280,6 +383,36 @@ def read_log() -> str:
         return f.read()
 
 
+def run_assessment_flow(anthropic_key: str, model: str, summary: str, transcript: str, target_role: str, question_context: str, outcome: str, session_label: str) -> None:
+    if not anthropic_key:
+        st.error("Add your Anthropic API key in the sidebar first.")
+        return
+    if not summary.strip() and not transcript.strip():
+        st.error("Provide an interview summary and/or a transcript first.")
+        return
+    with st.spinner("Assessing the interview..."):
+        client = Anthropic(api_key=anthropic_key)
+        user_content = build_user_content(summary, transcript, target_role, question_context, outcome)
+        report_md = call_claude(client, model, SYSTEM_PROMPT, user_content)
+        append_to_log(session_label, report_md)
+    st.session_state["last_report"] = report_md
+    st.success(f"Done. Logged to `{os.path.basename(LOG_PATH)}`.")
+
+
+def render_last_report(key_suffix: str) -> None:
+    if "last_report" in st.session_state:
+        st.divider()
+        st.markdown(st.session_state["last_report"])
+        st.download_button(
+            "Download report (.md)",
+            data=st.session_state["last_report"],
+            file_name=f"pm-interview-assessment-{datetime.now().strftime('%Y%m%d-%H%M')}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            key=f"download_{key_suffix}",
+        )
+
+
 st.set_page_config(page_title="AI PM Interview Coach", page_icon="🎯", layout="wide")
 
 with st.sidebar:
@@ -307,7 +440,7 @@ st.caption(
 )
 st.caption("**Question types recognized:** " + " · ".join(QUESTION_TYPES))
 
-tab_analyze, tab_log = st.tabs(["📝 Run Assessment", "📈 Progress Log"])
+tab_analyze, tab_granola, tab_log = st.tabs(["📝 Run Assessment", "🔗 Connect Granola", "📈 Progress Log"])
 
 with tab_analyze:
     with st.expander("Additional context (optional, but improves the assessment)"):
@@ -342,30 +475,147 @@ with tab_analyze:
     analyze_clicked = st.button("Run Assessment", type="primary", use_container_width=True)
 
     if analyze_clicked:
-        if not api_key:
-            st.error("Add your Anthropic API key in the sidebar first.")
-        elif not summary.strip() and not transcript.strip():
-            st.error("Provide an interview summary and/or a transcript first.")
-        else:
-            resolved_outcome = outcome_other.strip() if outcome == "Other (describe below)" and outcome_other.strip() else outcome
-            with st.spinner("Assessing the interview..."):
-                client = Anthropic(api_key=api_key)
-                user_content = build_user_content(summary, transcript, target_role, question_context, resolved_outcome)
-                report_md = call_claude(client, model, SYSTEM_PROMPT, user_content)
-                append_to_log(candidate_name, report_md)
-            st.session_state["last_report"] = report_md
-            st.success(f"Done. Logged to `{os.path.basename(LOG_PATH)}`.")
+        resolved_outcome = outcome_other.strip() if outcome == "Other (describe below)" and outcome_other.strip() else outcome
+        run_assessment_flow(api_key, model, summary, transcript, target_role, question_context, resolved_outcome, candidate_name)
 
-    if "last_report" in st.session_state:
-        st.divider()
-        st.markdown(st.session_state["last_report"])
-        st.download_button(
-            "Download report (.md)",
-            data=st.session_state["last_report"],
-            file_name=f"pm-interview-assessment-{datetime.now().strftime('%Y%m%d-%H%M')}.md",
-            mime="text/markdown",
-            use_container_width=True,
+    render_last_report("analyze")
+
+with tab_granola:
+    if not st.session_state.get("granola_connected"):
+        st.caption(
+            "Requires a Granola Business or Enterprise plan - API access isn't available on the "
+            "free Basic plan."
         )
+        granola_key_input = st.text_input(
+            "Granola API key",
+            type="password",
+            placeholder="grn_...",
+            help="Generate one in the Granola desktop app, under Settings → API access.",
+        )
+        if st.button("Connect", type="primary"):
+            if not granola_key_input:
+                st.error("Enter your Granola API key first.")
+            else:
+                with st.spinner("Checking your key..."):
+                    try:
+                        granola_request(granola_key_input, "/notes", {"page_size": 1})
+                    except GranolaAPIError as e:
+                        st.error(str(e))
+                    else:
+                        st.session_state["granola_connected"] = True
+                        st.session_state["granola_key"] = granola_key_input
+                        for k in ["granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
+                            st.session_state.pop(k, None)
+                        st.rerun()
+    else:
+        granola_key = st.session_state["granola_key"]
+
+        top_left, top_right = st.columns([4, 1])
+        with top_right:
+            if st.button("Disconnect"):
+                for k in ["granola_connected", "granola_key", "granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
+                    st.session_state.pop(k, None)
+                st.rerun()
+
+        if "granola_folders" not in st.session_state:
+            try:
+                st.session_state["granola_folders"] = granola_list_all_folders(granola_key)
+            except GranolaAPIError as e:
+                st.session_state["granola_folders"] = []
+                st.warning(f"Couldn't load folders: {e}")
+
+        folder_options = {"All folders": None}
+        for f in st.session_state["granola_folders"]:
+            folder_options[f["name"]] = f["id"]
+        with top_left:
+            folder_label = st.selectbox("Folder", list(folder_options.keys()))
+        selected_folder_id = folder_options[folder_label]
+
+        if "granola_notes" not in st.session_state or st.session_state.get("granola_folder_id") != selected_folder_id:
+            try:
+                notes, has_more, cursor = granola_list_notes(granola_key, folder_id=selected_folder_id, page_size=20)
+            except GranolaAPIError as e:
+                st.error(str(e))
+                notes, has_more, cursor = [], False, None
+            st.session_state["granola_notes"] = notes
+            st.session_state["granola_has_more"] = has_more
+            st.session_state["granola_cursor"] = cursor
+            st.session_state["granola_folder_id"] = selected_folder_id
+
+        search = st.text_input("Filter loaded interviews by title", placeholder="Search...")
+        notes = st.session_state["granola_notes"]
+        if search:
+            notes = [n for n in notes if search.lower() in (n.get("title") or "").lower()]
+
+        if not notes:
+            st.info("No interviews found. Only meetings with a generated Granola summary appear here.")
+
+        for note in notes:
+            title = note.get("title") or "Untitled interview"
+            created = (note.get("created_at") or "")[:10]
+            owner = (note.get("owner") or {}).get("name") or (note.get("owner") or {}).get("email") or ""
+            row = st.columns([5, 2, 2, 1])
+            row[0].markdown(f"**{title}**")
+            row[1].caption(created)
+            row[2].caption(owner)
+            if row[3].button("Select", key=f"select_{note['id']}"):
+                with st.spinner("Fetching interview details..."):
+                    try:
+                        st.session_state["granola_selected_note"] = granola_get_note(granola_key, note["id"])
+                    except GranolaAPIError as e:
+                        st.error(str(e))
+
+        if st.session_state.get("granola_has_more"):
+            if st.button("Load more interviews"):
+                try:
+                    more_notes, has_more, cursor = granola_list_notes(
+                        granola_key, folder_id=selected_folder_id, cursor=st.session_state["granola_cursor"], page_size=20
+                    )
+                    st.session_state["granola_notes"] = st.session_state["granola_notes"] + more_notes
+                    st.session_state["granola_has_more"] = has_more
+                    st.session_state["granola_cursor"] = cursor
+                    st.rerun()
+                except GranolaAPIError as e:
+                    st.error(str(e))
+
+        selected_note = st.session_state.get("granola_selected_note")
+        if selected_note:
+            st.divider()
+            st.subheader(selected_note.get("title") or "Untitled interview")
+
+            g_summary = selected_note.get("summary_markdown") or selected_note.get("summary_text") or ""
+            transcript_items = selected_note.get("transcript")
+            g_transcript = format_granola_transcript(transcript_items) if transcript_items else ""
+
+            if g_summary:
+                st.markdown("**Summary**")
+                st.markdown(g_summary)
+            else:
+                st.caption("No summary available for this interview.")
+
+            if not g_transcript:
+                st.caption(
+                    "No transcript for this interview - the assessment will run on the summary "
+                    "alone. Verbal-delivery ratings will come back \"Not assessable.\""
+                )
+
+            with st.expander("Additional context (optional, but improves the assessment)"):
+                g_col1, g_col2 = st.columns(2)
+                with g_col1:
+                    g_target_role = st.text_input("Target role", key="g_target_role", placeholder="e.g. Senior PM, Growth")
+                with g_col2:
+                    g_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="g_outcome")
+                g_question_context = st.text_area("Question context", key="g_question_context", height=80)
+                g_outcome_other = ""
+                if g_outcome == "Other (describe below)":
+                    g_outcome_other = st.text_input("Describe the outcome", key="g_outcome_other")
+
+            if st.button("Run Assessment on this interview", type="primary", use_container_width=True):
+                g_resolved_outcome = g_outcome_other.strip() if g_outcome == "Other (describe below)" and g_outcome_other.strip() else g_outcome
+                session_label = selected_note.get("title") or "Granola interview"
+                run_assessment_flow(api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, session_label)
+
+            render_last_report("granola")
 
 with tab_log:
     log_content = read_log()
