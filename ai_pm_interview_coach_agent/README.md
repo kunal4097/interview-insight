@@ -1,53 +1,51 @@
 # 🎯 AI PM Interview Coach
 
-An AI-powered PM interview assessment app — built with **Streamlit** and **Claude (Anthropic)**. \
-Give it interview notes and/or a transcript from a mock or real product-manager interview and get \
-back an anonymous, evidence-backed report: a rating dashboard across reasoning, communication, \
-delivery, and interviewer response; a question-by-question breakdown graded against the rubric that \
-actually fits each question type; a rewritten "improved answer"; a focused practice plan; and up to \
-three evidence-backed issues ranked by how much they hurt the answer. A running log tracks which \
-issues keep recurring across sessions, so prep actually compounds.
+An AI-powered PM interview assessment app — built with **Streamlit** and **Claude (Anthropic)** or \
+**OpenAI**. Give it interview notes and/or a transcript from a mock or real product-manager \
+interview and get back an anonymous, evidence-backed report built around one hypothesis: \
+*candidates improve when they understand how their answers addressed the interviewer's intent, \
+where their reasoning became weak or unclear, and what specific behavior to practice next.* Every \
+exchange is assessed on its own terms first, and the dashboard is derived from those per-exchange \
+assessments — not the other way around.
 
 ## 🚀 Features
 
-- 📊 **Dashboard built around two questions, not one flat report** — *what is this candidate \
-lacking* and *how did the interview land* are answered as two visually distinct things, not mixed \
-into one undifferentiated list:
-  - **How it landed** (hero row): overall rating, major issues found, and a badge for how the \
-interviewer visibly reacted — outcome signals, shown first.
-  - **Reasoning depth**: a single stacked bar showing how many of the candidate's choices were \
-merely *stated*, *explained* with a reason, or fully *justified* against evidence/tradeoffs — the \
-most direct answer to "what am I lacking," and something the rubric always computed internally but \
-never used to surface until now.
-  - **What to work on**: the per-skill breakdown (PM reasoning, communication, verbal delivery, \
-candidate-expressed sentiment) — only dimensions that could actually be assessed get a bar; a \
-"Not assessable" dimension is a compact line, not an empty bar taking up the same visual weight as \
-a real score.
-  - Major issues (condensed, ranked, expandable for full detail) and the full question-by-question \
-breakdown (behind a single "📋" expander) come after, not before.
+- 📊 **A dashboard built from per-exchange assessments, not a flat report.** Reading top to \
+bottom:
+  - **Opening assessment** — the candidate's introduction and first substantive answer, judged on \
+relevance to the role, ownership clarity, concrete impact, and concision, kept separate from the \
+per-question breakdown.
+  - **Answer assessment** — five independent 1-5 coaching ratings, each with evidence: **Answer \
+relevance**, **Decision reasoning**, **Metrics and evidence**, **Communication clarity**, and \
+**Speaking delivery**. Dimensions without evidence show "Not assessable" instead of a guessed \
+score — including Speaking delivery, which is only rated when the transcript is a faithful, \
+turn-by-turn capture (and only judges pace/pauses when real timing data exists).
+  - **Reasoning depth** — a stacked bar showing how many of the candidate's choices were merely \
+*stated*, *explained* with a reason, or fully *justified* against evidence/tradeoffs.
+  - **Conversation signals** — filler-word count, candidate speaking share, longest answer, and \
+questions asked, computed *deterministically* from the transcript's own text (not estimated by the \
+model), with graceful "not available" handling when speakers can't be identified.
+  - **How the answers landed** — each notable interviewer reaction classified (explicit positive \
+feedback, explicit concern or correction, request for clarification, further exploration, neutral \
+acknowledgment, or unclear) with the supporting excerpt, plus any genuine candidate-expressed \
+sentiment and what it was about. An outcome signal, never folded into a skill rating.
+  - **What worked**, then **major issues** (ranked by impact, each with evidence and a concrete \
+next-time action) and a **practice plan** tied to those issues.
+  - **Your answers, unpacked** — a per-question expander list, not one long dump.
 - 🧭 **Rubric-matched grading** — recognizes 9 PM question types and applies the structure that \
 fits each one, without penalizing a candidate for skipping steps that don't apply:
   - Product sense / design, Product improvement, Analytics / metrics, RCA / business \
 interpretation, Experimentation, Strategy / prioritization, Technical / systems problem-solving, \
 Behavioral / experience, AI product experience
 - 🧠 **"Why" assessment** — every major choice is classified as Stated, Explained, or Justified, \
-so vague-but-confident answers don't get credit they haven't earned — and the tally is now a \
-visible chart, not just an internal judgment call.
-- 🎭 **Interviewer response, read honestly** — labeled Positive / Mixed / Concern expressed / \
-Neutral / Insufficient evidence, backed by the exact observable basis in the transcript, including \
-pointed rhetorical pushback, not just blunt statements. Never infers hiring likelihood from \
-politeness or interview length.
+so vague-but-confident answers don't get credit they haven't earned.
 - ✍️ **Improved answer rewrite** — a concise, labeled rewrite of a weak answer showing what \
 "good" looks like, without inventing experience or results the candidate didn't have.
-- 🎯 **Practice plan** — up to three focused exercises with a measurable success check each.
-- 🚨 **Major issues found** — up to three evidence-backed issues, ranked by impact on the answer \
-(not by how easy they are to count), each with the evidence, the impact, a better approach, and a \
-practice action.
 - 🕵️ **Anonymous by design** — names, contact details, employers, and identifying background are \
 omitted from every report.
-- 📈 **Progress log across sessions** — every assessment appends its Snapshot, Rating Dashboard, \
-and Major Issues to a local `progress_log.md`; a one-click summary surfaces what recurs across 2+ \
-sessions, so you know what to actually fix before the next round.
+- 📈 **Progress log across sessions** — every assessment appends its Snapshot, Opening Assessment, \
+and Rating Dashboard, plus Major Issues, to a local `progress_log.md`; a one-click summary surfaces \
+what recurs across 2+ sessions, so you know what to actually fix before the next round.
 - 📥 **Exportable reports** — download any report or the full log as markdown.
 - 🔗 **Connect Granola directly** — a "Connect Granola" tab with two connection methods:
   - **API key** (Business/Enterprise plan) — paste a key, browse recorded interviews by folder,
@@ -137,9 +135,9 @@ fields below, then **Run Assessment on this content**.
 
 **Then, either way:**
 
-5. **Read the report** — Snapshot, then the Rating Dashboard, then a question-by-question \
-breakdown, communication notes, an improved-answer rewrite, a practice plan, and the top issues \
-found. Download it as markdown.
+5. **Read the report** — Snapshot and Opening Assessment, then the five-dimension Rating \
+Dashboard, a question-by-question breakdown, how the answers landed, an improved-answer rewrite, a \
+practice plan, and the top issues found. Download it as markdown.
 6. Check the **Progress Log** tab after a few sessions and click **Summarize recurring issues** \
 to see what keeps costing you points.
 
