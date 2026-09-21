@@ -23,9 +23,9 @@ GRANOLA_BASE_URL = "https://public-api.granola.ai/v1"
 GRANOLA_MCP_URL = "https://mcp.granola.ai/mcp"
 
 MODELS = {
+    "Claude Haiku 4.5 (fastest/cheapest)": "claude-haiku-4-5",
     "Claude Sonnet 5 (recommended)": "claude-sonnet-5",
     "Claude Opus 5 (deepest analysis)": "claude-opus-5",
-    "Claude Haiku 4.5 (fastest/cheapest)": "claude-haiku-4-5-20251001",
 }
 
 QUESTION_TYPES = [
