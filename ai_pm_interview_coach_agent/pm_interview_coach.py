@@ -9,8 +9,10 @@ Tracks recurring issues across sessions in a local log.
 """
 
 import asyncio
+import html
 import json
 import os
+import re
 from datetime import datetime
 
 import requests
@@ -216,7 +218,32 @@ Rank by impact on the answer, not by how easy the issue is to count.
 If there are no supported major issues, say so.
 
 OUTPUT FORMATTING
-Use markdown. Format the seven REPORT ORDER sections as top-level headers, exactly as follows and in this order, so downstream tooling can parse them:
+Start the response with a fenced JSON block, then the full markdown report. The JSON drives a visual summary in the app's UI - keep every string in it short (it is a condensed pointer to the full report, not a restatement of it).
+
+```json
+{
+  "overall_rating": <integer 1-5, or null if not assessable>,
+  "overall_read": "<one line, <=140 chars>",
+  "question_types": "<short comma-separated list>",
+  "source_quality": "<e.g. Transcript + summary, Summary only>",
+  "reported_outcome": "<the candidate-reported outcome, or 'Not provided'>",
+  "dimensions": [
+    {"key": "A", "name": "PM Reasoning", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low"},
+    {"key": "B", "name": "Communication", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low"},
+    {"key": "C", "name": "Verbal Delivery", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low"},
+    {"key": "D", "name": "Interviewer Response", "type": "label", "value": "Positive|Mixed|Concern expressed|Neutral|Insufficient evidence", "confidence": "High|Medium|Low"},
+    {"key": "E", "name": "Candidate Sentiment", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low"}
+  ],
+  "major_issues": [
+    {"title": "<<=60 chars>", "impact": "<one line, <=140 chars>"}
+  ],
+  "practice_plan": ["<one line each, <=100 chars>", "..."]
+}
+```
+
+`major_issues` and `practice_plan` mirror sections 7 and 6 - same count and same order, just condensed to a title/one-liner each; the full detail still belongs in the markdown sections below. Use `null` for any numeric dimension rated "Not assessable" rather than inventing a number.
+
+After the JSON block, format the seven REPORT ORDER sections as top-level markdown headers, exactly as follows and in this order, so downstream tooling can parse them:
 ## 1. Snapshot
 ## 2. Rating Dashboard
 ## 3. Question-by-Question Assessment
@@ -605,10 +632,170 @@ def run_assessment_flow(provider: str, api_key: str, model: str, summary: str, t
     st.success(f"Done. Logged to `{os.path.basename(LOG_PATH)}`.")
 
 
+# --- Dashboard rendering ------------------------------------------------------------------
+# The model leads its response with a small fenced JSON block (see SYSTEM_PROMPT ->
+# OUTPUT FORMATTING); this drives a scannable numbers-and-bars summary instead of dumping the
+# whole markdown report as one flat page. If the JSON is missing or malformed, everything below
+# degrades gracefully to the plain markdown - the report is never held hostage by the summary.
+
+STATUS_COLORS = {
+    "good": "#0ca30c",
+    "warning": "#fab219",
+    "serious": "#ec835a",
+    "critical": "#d03b3b",
+    "muted": "#898781",
+}
+STATUS_TEXT_ON_FILL = {
+    "good": "#ffffff",
+    "warning": "#1a1a19",
+    "serious": "#1a1a19",
+    "critical": "#ffffff",
+    "muted": "#ffffff",
+}
+LABEL_STATUS = {
+    "positive": "good",
+    "mixed": "warning",
+    "concern expressed": "critical",
+    "neutral": "muted",
+    "insufficient evidence": "muted",
+}
+
+
+def _numeric_status(value) -> str:
+    if value is None:
+        return "muted"
+    if value >= 4:
+        return "good"
+    if value == 3:
+        return "warning"
+    if value == 2:
+        return "serious"
+    return "critical"
+
+
+def _label_status(label: str | None) -> str:
+    return LABEL_STATUS.get((label or "").strip().lower(), "muted")
+
+
+def _extract_json_summary(report_md: str) -> dict | None:
+    match = re.search(r"```json\s*(\{.*?\})\s*```", report_md, re.DOTALL)
+    if not match:
+        return None
+    try:
+        return json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+
+
+def _strip_json_block(report_md: str) -> str:
+    return re.sub(r"```json\s*\{.*?\}\s*```\n*", "", report_md, count=1, flags=re.DOTALL).strip()
+
+
+def _stat_tile_html(label: str, value_text: str, status: str) -> str:
+    color = STATUS_COLORS[status]
+    return (
+        '<div style="flex:1;min-width:150px;padding:16px 18px;border-radius:12px;background:rgba(128,128,128,0.08);">'
+        f'<div style="font-size:12px;opacity:0.65;margin-bottom:4px;">{html.escape(label)}</div>'
+        f'<div style="font-size:30px;font-weight:700;color:{color};line-height:1.1;">{html.escape(value_text)}</div>'
+        "</div>"
+    )
+
+
+def _dimension_bar_html(name: str, value, confidence: str) -> str:
+    status = _numeric_status(value)
+    color = STATUS_COLORS[status]
+    pct = 0 if value is None else int(value) / 5 * 100
+    value_text = "Not assessable" if value is None else f"{value}/5"
+    return (
+        '<div style="margin-bottom:14px;">'
+        '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">'
+        f'<span>{html.escape(name)}</span>'
+        f'<span style="opacity:0.65;">{html.escape(value_text)} · {html.escape(confidence or "")} confidence</span>'
+        "</div>"
+        '<div style="height:10px;border-radius:5px;background:rgba(128,128,128,0.15);overflow:hidden;">'
+        f'<div style="height:100%;width:{pct:.0f}%;border-radius:5px;background:{color};"></div>'
+        "</div>"
+        "</div>"
+    )
+
+
+def _label_badge_html(name: str, label: str | None, confidence: str) -> str:
+    status = _label_status(label)
+    fill = STATUS_COLORS[status]
+    text_color = STATUS_TEXT_ON_FILL[status]
+    return (
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+        f'<span style="font-size:13px;">{html.escape(name)} <span style="opacity:0.55;">· {html.escape(confidence or "")} confidence</span></span>'
+        f'<span style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;background:{fill};color:{text_color};">{html.escape(label or "Unknown")}</span>'
+        "</div>"
+    )
+
+
+def render_report_dashboard(report_md: str) -> None:
+    summary = _extract_json_summary(report_md)
+    if not summary:
+        st.caption("Couldn't build the visual summary for this report - showing the full markdown instead.")
+        st.markdown(report_md)
+        return
+
+    body_md = _strip_json_block(report_md)
+
+    q_types = summary.get("question_types") or "Not provided"
+    source_quality = summary.get("source_quality") or "Not provided"
+    outcome = summary.get("reported_outcome") or "Not provided"
+    st.caption(f"**Question types:** {q_types}  ·  **Source:** {source_quality}  ·  **Outcome:** {outcome}")
+
+    overall_rating = summary.get("overall_rating")
+    major_issues = summary.get("major_issues") or []
+    overall_value_text = "N/A" if overall_rating is None else f"{overall_rating}/5"
+    tiles_html = (
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">'
+        + _stat_tile_html("Overall rating", overall_value_text, _numeric_status(overall_rating))
+        + _stat_tile_html("Major issues found", str(len(major_issues)), "critical" if major_issues else "good")
+        + "</div>"
+    )
+    st.markdown(tiles_html, unsafe_allow_html=True)
+    if summary.get("overall_read"):
+        st.markdown(f"_{html.escape(summary['overall_read'])}_")
+
+    st.markdown("##### Rating dashboard")
+    dimensions = summary.get("dimensions") or []
+    bars_html = []
+    for dim in dimensions:
+        name = dim.get("name") or dim.get("key") or "Dimension"
+        confidence = dim.get("confidence") or ""
+        if dim.get("type") == "label":
+            bars_html.append(_label_badge_html(name, dim.get("value"), confidence))
+        else:
+            bars_html.append(_dimension_bar_html(name, dim.get("value"), confidence))
+    st.markdown("".join(bars_html), unsafe_allow_html=True)
+
+    if major_issues:
+        st.markdown("##### Major issues found")
+        full_issues_md = _extract_section(report_md, "## 7. MAJOR ISSUES FOUND", None)
+        for i, issue in enumerate(major_issues):
+            title = issue.get("title") or f"Issue {i + 1}"
+            impact = issue.get("impact") or ""
+            st.markdown(f"**{i + 1}. {html.escape(title)}** — {html.escape(impact)}")
+        with st.expander("Full evidence, better approach, and practice action for each issue"):
+            st.markdown(full_issues_md or "Not available.")
+
+    practice_plan = summary.get("practice_plan") or []
+    if practice_plan:
+        st.markdown("##### Practice plan")
+        for item in practice_plan:
+            st.markdown(f"- {html.escape(item)}")
+
+    qa_md = _extract_section(body_md, "## 3. Question-by-Question Assessment", "## 6. Practice Plan")
+    if qa_md:
+        with st.expander("📋 See the full question-by-question analysis"):
+            st.markdown(qa_md)
+
+
 def render_last_report(key_suffix: str) -> None:
     if "last_report" in st.session_state:
         st.divider()
-        st.markdown(st.session_state["last_report"])
+        render_report_dashboard(st.session_state["last_report"])
         st.download_button(
             "Download report (.md)",
             data=st.session_state["last_report"],

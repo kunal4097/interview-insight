@@ -10,6 +10,11 @@ issues keep recurring across sessions, so prep actually compounds.
 
 ## 🚀 Features
 
+- 📊 **Dashboard-first report** — the moment a report lands, you get two headline stat tiles \
+(overall rating, major issues found), a color-coded bar for each rating dimension, and condensed \
+major-issue cards — all before any long text. The full question-by-question breakdown sits behind \
+a single "📋 See the full question-by-question analysis" expander so it's there when you want it \
+and out of the way when you don't.
 - 🧭 **Rubric-matched grading** — recognizes 8 PM question types and applies the structure that \
 fits each one, without penalizing a candidate for skipping steps that don't apply:
   - Product sense / design, Product improvement, Analytics / metrics, RCA / business \
