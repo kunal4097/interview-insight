@@ -141,6 +141,8 @@ Why this solution or investigation?
 Why this metric?
 What would change the decision?
 
+Keep a running tally of every choice you classify this way across the whole interview (every question, not just one). This tally becomes `why_depth` in the JSON summary - it is one of the most direct answers to "what is this candidate lacking," so count honestly rather than rounding toward "Explained." A choice with no stated reason at all (not even a weak one) isn't part of this tally - only count choices where the candidate said *something*, then classify how well-grounded it was.
+
 RATING SCALE
 
 Use whole-number ratings from 1 to 5:
@@ -240,12 +242,13 @@ Start the response with a fenced JSON block, then the full markdown report. The 
   "question_types": "<short comma-separated list>",
   "source_quality": "<e.g. Transcript + summary, Summary only>",
   "reported_outcome": "<the candidate-reported outcome, or 'Not provided'>",
+  "interviewer_response": {"value": "Positive|Mixed|Concern expressed|Neutral|Insufficient evidence", "confidence": "High|Medium|Low", "evidence": "<the exact observable basis, one line, <=100 chars>"},
+  "why_depth": {"stated": <count>, "explained": <count>, "justified": <count>, "gap": "<one line naming the single most common missing 'why', <=100 chars, or empty string if reasoning was consistently well-grounded>"},
   "dimensions": [
-    {"key": "A", "name": "PM Reasoning", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"},
-    {"key": "B", "name": "Communication", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"},
-    {"key": "C", "name": "Verbal Delivery", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"},
-    {"key": "D", "name": "Interviewer Response", "type": "label", "value": "Positive|Mixed|Concern expressed|Neutral|Insufficient evidence", "confidence": "High|Medium|Low", "evidence": "<the exact observable basis, one line, <=100 chars>"},
-    {"key": "E", "name": "Candidate Sentiment", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"}
+    {"key": "A", "name": "PM Reasoning", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"},
+    {"key": "B", "name": "Communication", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"},
+    {"key": "C", "name": "Verbal Delivery", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"},
+    {"key": "E", "name": "Candidate Sentiment", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"}
   ],
   "major_issues": [
     {"title": "<<=60 chars>", "impact": "<one line, <=140 chars>"}
@@ -253,6 +256,8 @@ Start the response with a fenced JSON block, then the full markdown report. The 
   "practice_plan": ["<one line each, <=100 chars>", "..."]
 }
 ```
+
+`interviewer_response` and `why_depth` are new, separated out from `dimensions` because they answer a different question than the other four: `dimensions` is "what is this candidate lacking" (skill, graded 1-5), while `interviewer_response` and the overall rating answer "how did the interview land" - keep that distinction in mind when writing `evidence` for each. `why_depth`'s three counts should sum to the total number of "why"-relevant choices you actually found across the interview - not the total number of questions, and not padded to look complete.
 
 `major_issues` and `practice_plan` mirror sections 7 and 6 - same count and same order, just condensed to a title/one-liner each; the full detail still belongs in the markdown sections below. Use `null` for any numeric dimension rated "Not assessable" rather than inventing a number. Every dimension's `evidence` is mandatory and must name the specific observable basis (a paraphrased moment, not a generic restatement of the rating) - this is what the UI shows next to the score, so "reasonable structure" is not acceptable but "scoped to commuters but never compared it to other segments" is.
 
@@ -712,6 +717,59 @@ def _stat_tile_html(label: str, value_text: str, status: str) -> str:
     )
 
 
+def _badge_tile_html(label: str, value: str | None, confidence: str) -> str:
+    status = _label_status(value)
+    fill = STATUS_COLORS[status]
+    text_color = STATUS_TEXT_ON_FILL[status]
+    conf_html = f'<div style="font-size:11px;opacity:0.55;margin-top:6px;">{html.escape(confidence)} confidence</div>' if confidence else ""
+    return (
+        '<div style="flex:1;min-width:150px;padding:16px 18px;border-radius:12px;background:rgba(128,128,128,0.08);">'
+        f'<div style="font-size:12px;opacity:0.65;margin-bottom:8px;">{html.escape(label)}</div>'
+        f'<span style="font-size:14px;font-weight:600;padding:5px 14px;border-radius:999px;background:{fill};color:{text_color};">{html.escape(value or "Unknown")}</span>'
+        f"{conf_html}"
+        "</div>"
+    )
+
+
+def _why_depth_bar_html(stated: int, explained: int, justified: int, gap: str) -> str:
+    total = stated + explained + justified
+    if total <= 0:
+        return ""
+
+    def seg(count: int, color: str) -> str:
+        pct = count / total * 100
+        return f'<div style="height:100%;width:{pct:.1f}%;background:{color};"></div>' if count > 0 else ""
+
+    bar = (
+        '<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;gap:2px;background:rgba(128,128,128,0.1);">'
+        + seg(stated, STATUS_COLORS["critical"])
+        + seg(explained, STATUS_COLORS["warning"])
+        + seg(justified, STATUS_COLORS["good"])
+        + "</div>"
+    )
+    legend_item = lambda color, label, count: (  # noqa: E731
+        f'<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:{color};margin-right:4px;"></span>{html.escape(label)} ({count})</span>'
+    )
+    legend = (
+        '<div style="display:flex;gap:16px;margin-top:6px;font-size:12px;opacity:0.7;flex-wrap:wrap;">'
+        + legend_item(STATUS_COLORS["critical"], "Stated only", stated)
+        + legend_item(STATUS_COLORS["warning"], "Explained", explained)
+        + legend_item(STATUS_COLORS["good"], "Justified", justified)
+        + "</div>"
+    )
+    gap_html = f'<div style="font-size:12px;opacity:0.6;margin-top:6px;">{html.escape(gap)}</div>' if gap else ""
+    return f'<div style="margin-bottom:8px;">{bar}{legend}{gap_html}</div>'
+
+
+def _not_assessable_html(name: str, evidence: str) -> str:
+    reason = f" — {html.escape(evidence)}" if evidence else ""
+    return (
+        '<div style="display:flex;justify-content:space-between;padding:7px 0;font-size:13px;opacity:0.55;border-bottom:1px solid rgba(128,128,128,0.12);">'
+        f"<span>{html.escape(name)}</span><span>Not assessable{reason}</span>"
+        "</div>"
+    )
+
+
 def _dimension_bar_html(name: str, value, confidence: str, evidence: str) -> str:
     status = _numeric_status(value)
     color = STATUS_COLORS[status]
@@ -732,22 +790,6 @@ def _dimension_bar_html(name: str, value, confidence: str, evidence: str) -> str
     )
 
 
-def _label_badge_html(name: str, label: str | None, confidence: str, evidence: str) -> str:
-    status = _label_status(label)
-    fill = STATUS_COLORS[status]
-    text_color = STATUS_TEXT_ON_FILL[status]
-    evidence_html = f'<div style="font-size:12px;opacity:0.6;margin-top:3px;">{html.escape(evidence)}</div>' if evidence else ""
-    return (
-        '<div style="margin-bottom:16px;">'
-        '<div style="display:flex;justify-content:space-between;align-items:center;">'
-        f'<span style="font-size:13px;">{html.escape(name)} <span style="opacity:0.55;">· {html.escape(confidence or "")} confidence</span></span>'
-        f'<span style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;background:{fill};color:{text_color};">{html.escape(label or "Unknown")}</span>'
-        "</div>"
-        f"{evidence_html}"
-        "</div>"
-    )
-
-
 def render_report_dashboard(report_md: str) -> None:
     summary = _extract_json_summary(report_md)
     if not summary:
@@ -762,31 +804,51 @@ def render_report_dashboard(report_md: str) -> None:
     outcome = summary.get("reported_outcome") or "Not provided"
     st.caption(f"**Question types:** {q_types}  ·  **Source:** {source_quality}  ·  **Outcome:** {outcome}")
 
+    # Hero row answers "how did the interview go" - overall outcome signals, not skill ratings.
     overall_rating = summary.get("overall_rating")
     major_issues = summary.get("major_issues") or []
+    interviewer = summary.get("interviewer_response") or {}
     overall_value_text = "N/A" if overall_rating is None else f"{overall_rating}/5"
     tiles_html = (
-        '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">'
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">'
         + _stat_tile_html("Overall rating", overall_value_text, _numeric_status(overall_rating))
         + _stat_tile_html("Major issues found", str(len(major_issues)), "info")
+        + _badge_tile_html("How it landed with the interviewer", interviewer.get("value"), interviewer.get("confidence") or "")
         + "</div>"
     )
     st.markdown(tiles_html, unsafe_allow_html=True)
     if summary.get("overall_read"):
         st.markdown(f"_{html.escape(summary['overall_read'])}_")
+    if interviewer.get("evidence"):
+        st.caption(f"Interviewer reaction: {interviewer['evidence']}")
 
-    st.markdown("##### Rating dashboard")
+    # Reasoning depth answers "what is this candidate lacking" at the most aggregate level -
+    # computed by the model throughout WHY ASSESSMENT but otherwise never surfaced.
+    why_depth = summary.get("why_depth") or {}
+    stated = why_depth.get("stated") or 0
+    explained = why_depth.get("explained") or 0
+    justified = why_depth.get("justified") or 0
+    why_bar = _why_depth_bar_html(stated, explained, justified, why_depth.get("gap") or "")
+    if why_bar:
+        st.markdown("##### Reasoning depth")
+        st.caption("How well-grounded were the candidate's choices - stated outright, explained with a reason, or justified against evidence/tradeoffs?")
+        st.markdown(why_bar, unsafe_allow_html=True)
+
+    # The rest of the dashboard is the "what to work on" skill breakdown - only dimensions
+    # graded on a 1-5 skill scale live here; interviewer response is an outcome, shown above.
+    st.markdown("##### What to work on")
     dimensions = summary.get("dimensions") or []
-    bars_html = []
+    rows_html = []
     for dim in dimensions:
         name = dim.get("name") or dim.get("key") or "Dimension"
         confidence = dim.get("confidence") or ""
         evidence = dim.get("evidence") or ""
-        if dim.get("type") == "label":
-            bars_html.append(_label_badge_html(name, dim.get("value"), confidence, evidence))
+        value = dim.get("value")
+        if value is None:
+            rows_html.append(_not_assessable_html(name, evidence))
         else:
-            bars_html.append(_dimension_bar_html(name, dim.get("value"), confidence, evidence))
-    st.markdown("".join(bars_html), unsafe_allow_html=True)
+            rows_html.append(_dimension_bar_html(name, value, confidence, evidence))
+    st.markdown("".join(rows_html), unsafe_allow_html=True)
 
     if major_issues:
         st.markdown("##### Major issues found")

@@ -10,25 +10,33 @@ issues keep recurring across sessions, so prep actually compounds.
 
 ## 🚀 Features
 
-- 📊 **Dashboard-first report** — the moment a report lands, you get two headline stat tiles \
-(overall rating, major issues found), a color-coded bar for each rating dimension, and condensed \
-major-issue cards — all before any long text. The full question-by-question breakdown sits behind \
-a single "📋 See the full question-by-question analysis" expander so it's there when you want it \
-and out of the way when you don't.
+- 📊 **Dashboard built around two questions, not one flat report** — *what is this candidate \
+lacking* and *how did the interview land* are answered as two visually distinct things, not mixed \
+into one undifferentiated list:
+  - **How it landed** (hero row): overall rating, major issues found, and a badge for how the \
+interviewer visibly reacted — outcome signals, shown first.
+  - **Reasoning depth**: a single stacked bar showing how many of the candidate's choices were \
+merely *stated*, *explained* with a reason, or fully *justified* against evidence/tradeoffs — the \
+most direct answer to "what am I lacking," and something the rubric always computed internally but \
+never used to surface until now.
+  - **What to work on**: the per-skill breakdown (PM reasoning, communication, verbal delivery, \
+candidate-expressed sentiment) — only dimensions that could actually be assessed get a bar; a \
+"Not assessable" dimension is a compact line, not an empty bar taking up the same visual weight as \
+a real score.
+  - Major issues (condensed, ranked, expandable for full detail) and the full question-by-question \
+breakdown (behind a single "📋" expander) come after, not before.
 - 🧭 **Rubric-matched grading** — recognizes 9 PM question types and applies the structure that \
 fits each one, without penalizing a candidate for skipping steps that don't apply:
   - Product sense / design, Product improvement, Analytics / metrics, RCA / business \
 interpretation, Experimentation, Strategy / prioritization, Technical / systems problem-solving, \
 Behavioral / experience, AI product experience
-- 📊 **5-dimension rating dashboard** — PM reasoning, Language & communication, Verbal delivery, \
-Interviewer response, and Candidate-expressed sentiment, each scored independently (1–5, or \
-"Not assessable") with an evidence excerpt and a confidence level (High/Medium/Low) — no decimals, \
-no percentiles, no hiring probabilities.
 - 🧠 **"Why" assessment** — every major choice is classified as Stated, Explained, or Justified, \
-so vague-but-confident answers don't get credit they haven't earned.
+so vague-but-confident answers don't get credit they haven't earned — and the tally is now a \
+visible chart, not just an internal judgment call.
 - 🎭 **Interviewer response, read honestly** — labeled Positive / Mixed / Concern expressed / \
-Neutral / Insufficient evidence, backed by the exact observable basis in the transcript. Never \
-infers hiring likelihood from politeness or interview length.
+Neutral / Insufficient evidence, backed by the exact observable basis in the transcript, including \
+pointed rhetorical pushback, not just blunt statements. Never infers hiring likelihood from \
+politeness or interview length.
 - ✍️ **Improved answer rewrite** — a concise, labeled rewrite of a weak answer showing what \
 "good" looks like, without inventing experience or results the candidate didn't have.
 - 🎯 **Practice plan** — up to three focused exercises with a measurable success check each.
