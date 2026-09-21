@@ -16,17 +16,28 @@ from datetime import datetime
 import requests
 import streamlit as st
 from anthropic import Anthropic
+from openai import OpenAI
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(APP_DIR, "progress_log.md")
 GRANOLA_BASE_URL = "https://public-api.granola.ai/v1"
 GRANOLA_MCP_URL = "https://mcp.granola.ai/mcp"
 
-MODELS = {
+PROVIDERS = ["Claude (Anthropic)", "OpenAI"]
+
+CLAUDE_MODELS = {
     "Claude Haiku 4.5 (fastest/cheapest)": "claude-haiku-4-5",
     "Claude Sonnet 5 (recommended)": "claude-sonnet-5",
     "Claude Opus 5 (deepest analysis)": "claude-opus-5",
 }
+
+OPENAI_MODELS = {
+    "GPT-5 Mini (fastest/cheapest)": "gpt-5-mini",
+    "GPT-5.6 Terra (recommended)": "gpt-5.6-terra",
+    "GPT-5.6 Sol (deepest analysis)": "gpt-5.6-sol",
+}
+
+MODELS_BY_PROVIDER = {"Claude (Anthropic)": CLAUDE_MODELS, "OpenAI": OPENAI_MODELS}
 
 QUESTION_TYPES = [
     "Product sense / design",
@@ -222,7 +233,20 @@ recurring rather than one-off, and the single highest-leverage thing to fix befo
 interview. Bullets only."""
 
 
-def call_claude(client: Anthropic, model: str, system: str, user_content: str) -> str:
+def call_llm(provider: str, api_key: str, model: str, system: str, user_content: str) -> str:
+    if provider == "OpenAI":
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model=model,
+            max_completion_tokens=6000,
+            messages=[
+                {"role": "developer", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+        )
+        return response.choices[0].message.content or ""
+
+    client = Anthropic(api_key=api_key)
     response = client.messages.create(
         model=model,
         max_tokens=6000,
@@ -566,17 +590,16 @@ def read_log() -> str:
         return f.read()
 
 
-def run_assessment_flow(anthropic_key: str, model: str, summary: str, transcript: str, target_role: str, question_context: str, outcome: str, session_label: str) -> None:
-    if not anthropic_key:
-        st.error("Add your Anthropic API key in the sidebar first.")
+def run_assessment_flow(provider: str, api_key: str, model: str, summary: str, transcript: str, target_role: str, question_context: str, outcome: str, session_label: str) -> None:
+    if not api_key:
+        st.error(f"Add your {provider} API key in the sidebar first.")
         return
     if not summary.strip() and not transcript.strip():
         st.error("Provide an interview summary and/or a transcript first.")
         return
     with st.spinner("Assessing the interview..."):
-        client = Anthropic(api_key=anthropic_key)
         user_content = build_user_content(summary, transcript, target_role, question_context, outcome)
-        report_md = call_claude(client, model, SYSTEM_PROMPT, user_content)
+        report_md = call_llm(provider, api_key, model, SYSTEM_PROMPT, user_content)
         append_to_log(session_label, report_md)
     st.session_state["last_report"] = report_md
     st.success(f"Done. Logged to `{os.path.basename(LOG_PATH)}`.")
@@ -600,18 +623,28 @@ st.set_page_config(page_title="AI PM Interview Coach", page_icon="🎯", layout=
 
 with st.sidebar:
     st.header("🔑 Settings")
-    api_key = st.text_input(
-        "Anthropic API Key",
-        type="password",
-        value=os.environ.get("ANTHROPIC_API_KEY", ""),
-        help="Get one at https://console.anthropic.com/settings/keys",
-    )
-    model_label = st.selectbox("Model", list(MODELS.keys()))
-    model = MODELS[model_label]
+    provider = st.radio("Model provider", PROVIDERS, horizontal=True)
+    if provider == "OpenAI":
+        api_key = st.text_input(
+            "OpenAI API Key",
+            type="password",
+            value=os.environ.get("OPENAI_API_KEY", ""),
+            help="Get one at https://platform.openai.com/api-keys",
+        )
+    else:
+        api_key = st.text_input(
+            "Anthropic API Key",
+            type="password",
+            value=os.environ.get("ANTHROPIC_API_KEY", ""),
+            help="Get one at https://console.anthropic.com/settings/keys",
+        )
+    models_for_provider = MODELS_BY_PROVIDER[provider]
+    model_label = st.selectbox("Model", list(models_for_provider.keys()))
+    model = models_for_provider[model_label]
     st.divider()
     candidate_name = st.text_input("Session label", placeholder="e.g. Mock round 2 - product sense")
     st.divider()
-    st.caption("Notes/transcripts stay local to this app - the only network call is to the Anthropic API.")
+    st.caption(f"Notes/transcripts stay local to this app - the only network call is to the {provider} API.")
     st.caption("Reports are written to omit names, contact details, employers, and other identifying background.")
 
 st.title("🎯 AI PM Interview Coach")
@@ -659,7 +692,7 @@ with tab_analyze:
 
     if analyze_clicked:
         resolved_outcome = outcome_other.strip() if outcome == "Other (describe below)" and outcome_other.strip() else outcome
-        run_assessment_flow(api_key, model, summary, transcript, target_role, question_context, resolved_outcome, candidate_name)
+        run_assessment_flow(provider, api_key, model, summary, transcript, target_role, question_context, resolved_outcome, candidate_name)
 
     render_last_report("analyze")
 
@@ -803,7 +836,7 @@ with tab_granola:
                 if st.button("Run Assessment on this interview", type="primary", use_container_width=True):
                     g_resolved_outcome = g_outcome_other.strip() if g_outcome == "Other (describe below)" and g_outcome_other.strip() else g_outcome
                     session_label = selected_note.get("title") or "Granola interview"
-                    run_assessment_flow(api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, session_label)
+                    run_assessment_flow(provider, api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, session_label)
 
                 render_last_report("granola")
 
@@ -910,7 +943,7 @@ with tab_granola:
 
                 if st.button("Run Assessment on this content", type="primary", use_container_width=True):
                     mcp_resolved_outcome = mcp_outcome_other.strip() if mcp_outcome == "Other (describe below)" and mcp_outcome_other.strip() else mcp_outcome
-                    run_assessment_flow(api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, "Granola interview (via MCP)")
+                    run_assessment_flow(provider, api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, "Granola interview (via MCP)")
 
                 render_last_report("granola_mcp")
 
@@ -922,11 +955,10 @@ with tab_log:
         st.markdown(log_content)
         if st.button("Summarize recurring issues across all sessions"):
             if not api_key:
-                st.error("Add your Anthropic API key in the sidebar first.")
+                st.error(f"Add your {provider} API key in the sidebar first.")
             else:
                 with st.spinner("Looking for patterns across sessions..."):
-                    client = Anthropic(api_key=api_key)
-                    summary_of_log = call_claude(client, model, SUMMARY_SYSTEM_PROMPT, log_content)
+                    summary_of_log = call_llm(provider, api_key, model, SUMMARY_SYSTEM_PROMPT, log_content)
                 st.markdown(summary_of_log)
         st.download_button(
             "Download full log (.md)",

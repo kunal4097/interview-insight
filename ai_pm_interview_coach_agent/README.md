@@ -47,7 +47,9 @@ sessions, so you know what to actually fix before the next round.
 ## 🛠️ Tech Stack
 
 - **Frontend:** Streamlit (Python)
-- **AI Model:** Claude (Anthropic API) — Sonnet 5, Opus 5, or Haiku 4.5, selectable in the sidebar
+- **AI Model:** a provider selector in the sidebar switches the whole app between **Claude**
+(Anthropic API — Haiku 4.5, Sonnet 5, or Opus 5) and **OpenAI** (GPT-5 Mini, GPT-5.6 Terra, or
+GPT-5.6 Sol). Same rubric and report either way — only the API call underneath changes.
 - **Granola integration:** Granola's public REST API (`https://public-api.granola.ai/v1`) via
 `requests`, plus an optional MCP/OAuth client (`mcp` package, lazy-installed) against
 `https://mcp.granola.ai/mcp`
@@ -73,13 +75,17 @@ sessions, so you know what to actually fix before the next round.
 
 ## 🔑 Environment Variables
 
-Provide your **Anthropic API key** in the sidebar when the app opens (get one at \
-[console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)). \
-Alternatively, set it before launching so the sidebar field pre-fills:
+Pick a provider in the sidebar, then provide that provider's API key there — Claude \
+([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)) or OpenAI \
+([platform.openai.com/api-keys](https://platform.openai.com/api-keys)). Alternatively, set the \
+matching env var before launching so the sidebar field pre-fills:
 
 ```bash
-export ANTHROPIC_API_KEY=your_key_here
+export ANTHROPIC_API_KEY=your_key_here   # for Claude
+export OPENAI_API_KEY=your_key_here      # for OpenAI
 ```
+
+You only need the key for whichever provider you have selected.
 
 ## 🧑‍💻 Usage
 

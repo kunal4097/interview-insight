@@ -12,3 +12,5 @@ ai_pm_interview_coach_agent/progress_log.md
 # Personal design-system asset, not specific to this project - kept local only
 /Canva Apps Design System/
 /mockup/
+.venv/
+ai_pm_interview_coach_agent/streamlit.log
