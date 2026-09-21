@@ -334,27 +334,31 @@ recurring rather than one-off, and the single highest-leverage thing to fix befo
 interview. Bullets only."""
 
 
-def call_llm(provider: str, api_key: str, model: str, system: str, user_content: str) -> str:
+def call_llm(provider: str, api_key: str, model: str, system: str, user_content: str) -> tuple[str, bool]:
+    """Returns (response_text, truncated) - truncated is True when the model hit the token
+    limit before finishing, which is the main way a well-formed JSON summary block goes missing."""
     if provider == "OpenAI":
         client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
             model=model,
-            max_completion_tokens=6000,
+            max_completion_tokens=16000,
             messages=[
                 {"role": "developer", "content": system},
                 {"role": "user", "content": user_content},
             ],
         )
-        return response.choices[0].message.content or ""
+        choice = response.choices[0]
+        return choice.message.content or "", choice.finish_reason == "length"
 
     client = Anthropic(api_key=api_key)
     response = client.messages.create(
         model=model,
-        max_tokens=6000,
+        max_tokens=16000,
         system=system,
         messages=[{"role": "user", "content": user_content}],
     )
-    return "".join(block.text for block in response.content if block.type == "text")
+    text = "".join(block.text for block in response.content if block.type == "text")
+    return text, response.stop_reason == "max_tokens"
 
 
 class GranolaAPIError(Exception):
@@ -766,10 +770,13 @@ def run_assessment_flow(provider: str, api_key: str, model: str, summary: str, t
         return
     with st.spinner("Assessing the interview..."):
         user_content = build_user_content(summary, transcript, target_role, question_context, outcome)
-        report_md = call_llm(provider, api_key, model, SYSTEM_PROMPT, user_content)
+        report_md, truncated = call_llm(provider, api_key, model, SYSTEM_PROMPT, user_content)
         append_to_log(session_label, report_md)
     st.session_state["last_report"] = report_md
+    st.session_state["last_report_truncated"] = truncated
     st.session_state["last_signals"] = compute_conversation_signals(transcript)
+    if truncated:
+        st.warning("The model's response hit its length limit before finishing - the report below may be incomplete. Try running the assessment again.")
     st.success(f"Done. Logged to `{os.path.basename(LOG_PATH)}`.")
 
 
@@ -818,14 +825,14 @@ def _numeric_status(value) -> str:
     return "critical"
 
 
-def _extract_json_summary(report_md: str) -> dict | None:
+def _extract_json_summary(report_md: str) -> tuple[dict | None, str | None]:
     match = re.search(r"```json\s*(\{.*?\})\s*```", report_md, re.DOTALL)
     if not match:
-        return None
+        return None, "No JSON summary block found in the response."
     try:
-        return json.loads(match.group(1))
-    except json.JSONDecodeError:
-        return None
+        return json.loads(match.group(1)), None
+    except json.JSONDecodeError as e:
+        return None, f"JSON parse error: {e}"
 
 
 def _strip_json_block(report_md: str) -> str:
@@ -988,10 +995,15 @@ def _signal_stat_html(label: str, value_text: str) -> str:
     )
 
 
-def render_report_dashboard(report_md: str, signals: dict | None = None) -> None:
-    summary = _extract_json_summary(report_md)
+def render_report_dashboard(report_md: str, signals: dict | None = None, truncated: bool = False) -> None:
+    summary, parse_error = _extract_json_summary(report_md)
     if not summary:
-        st.caption("Couldn't build the visual summary for this report - showing the full markdown instead.")
+        if truncated:
+            st.warning("The model's response hit its length limit before finishing, so the visual summary couldn't be built - showing the full (likely incomplete) markdown instead. Try running the assessment again.")
+        elif parse_error:
+            st.caption(f"Couldn't build the visual summary for this report ({parse_error}) - showing the full markdown instead.")
+        else:
+            st.caption("Couldn't build the visual summary for this report - showing the full markdown instead.")
         st.markdown(report_md)
         return
 
@@ -1139,7 +1151,9 @@ def render_report_dashboard(report_md: str, signals: dict | None = None) -> None
 def render_last_report(key_suffix: str) -> None:
     if "last_report" in st.session_state:
         st.divider()
-        render_report_dashboard(st.session_state["last_report"], st.session_state.get("last_signals", {}))
+        render_report_dashboard(
+            st.session_state["last_report"], st.session_state.get("last_signals", {}), st.session_state.get("last_report_truncated", False)
+        )
         st.download_button(
             "Download report (.md)",
             data=st.session_state["last_report"],
@@ -1489,7 +1503,7 @@ with tab_log:
                 st.error(f"Add your {provider} API key in the sidebar first.")
             else:
                 with st.spinner("Looking for patterns across sessions..."):
-                    summary_of_log = call_llm(provider, api_key, model, SUMMARY_SYSTEM_PROMPT, log_content)
+                    summary_of_log, _ = call_llm(provider, api_key, model, SUMMARY_SYSTEM_PROMPT, log_content)
                 st.markdown(summary_of_log)
         st.download_button(
             "Download full log (.md)",
