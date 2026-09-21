@@ -216,6 +216,7 @@ Issue -> supporting evidence -> impact -> better approach -> practice action.
 
 Rank by impact on the answer, not by how easy the issue is to count.
 If there are no supported major issues, say so.
+An issue must be tied to something the question actually called for. Before raising it, name which question and which framework element it violates - if you can't (e.g. flagging a missing metric on a behavioral question, or a missing user-selection rationale on an analytics question), it is not a major issue. A gap in an irrelevant framework step is not evidence of anything, no matter how tempting it is to fill the third slot.
 
 OUTPUT FORMATTING
 Start the response with a fenced JSON block, then the full markdown report. The JSON drives a visual summary in the app's UI - keep every string in it short (it is a condensed pointer to the full report, not a restatement of it).
@@ -228,11 +229,11 @@ Start the response with a fenced JSON block, then the full markdown report. The 
   "source_quality": "<e.g. Transcript + summary, Summary only>",
   "reported_outcome": "<the candidate-reported outcome, or 'Not provided'>",
   "dimensions": [
-    {"key": "A", "name": "PM Reasoning", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low"},
-    {"key": "B", "name": "Communication", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low"},
-    {"key": "C", "name": "Verbal Delivery", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low"},
-    {"key": "D", "name": "Interviewer Response", "type": "label", "value": "Positive|Mixed|Concern expressed|Neutral|Insufficient evidence", "confidence": "High|Medium|Low"},
-    {"key": "E", "name": "Candidate Sentiment", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low"}
+    {"key": "A", "name": "PM Reasoning", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"},
+    {"key": "B", "name": "Communication", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"},
+    {"key": "C", "name": "Verbal Delivery", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"},
+    {"key": "D", "name": "Interviewer Response", "type": "label", "value": "Positive|Mixed|Concern expressed|Neutral|Insufficient evidence", "confidence": "High|Medium|Low", "evidence": "<the exact observable basis, one line, <=100 chars>"},
+    {"key": "E", "name": "Candidate Sentiment", "type": "numeric", "value": <1-5 or null>, "confidence": "High|Medium|Low", "evidence": "<one line, <=100 chars>"}
   ],
   "major_issues": [
     {"title": "<<=60 chars>", "impact": "<one line, <=140 chars>"}
@@ -241,7 +242,7 @@ Start the response with a fenced JSON block, then the full markdown report. The 
 }
 ```
 
-`major_issues` and `practice_plan` mirror sections 7 and 6 - same count and same order, just condensed to a title/one-liner each; the full detail still belongs in the markdown sections below. Use `null` for any numeric dimension rated "Not assessable" rather than inventing a number.
+`major_issues` and `practice_plan` mirror sections 7 and 6 - same count and same order, just condensed to a title/one-liner each; the full detail still belongs in the markdown sections below. Use `null` for any numeric dimension rated "Not assessable" rather than inventing a number. Every dimension's `evidence` is mandatory and must name the specific observable basis (a paraphrased moment, not a generic restatement of the rating) - this is what the UI shows next to the score, so "reasonable structure" is not acceptable but "scoped to commuters but never compared it to other segments" is.
 
 After the JSON block, format the seven REPORT ORDER sections as top-level markdown headers, exactly as follows and in this order, so downstream tooling can parse them:
 ## 1. Snapshot
@@ -639,17 +640,17 @@ def run_assessment_flow(provider: str, api_key: str, model: str, summary: str, t
 # degrades gracefully to the plain markdown - the report is never held hostage by the summary.
 
 STATUS_COLORS = {
-    "good": "#0ca30c",
-    "warning": "#fab219",
-    "serious": "#ec835a",
-    "critical": "#d03b3b",
-    "muted": "#898781",
+    "good": "#128a45",
+    "warning": "#ffb302",
+    "critical": "#d31d3c",
+    "info": "#1a56e0",
+    "muted": "#6b6b6b",
 }
 STATUS_TEXT_ON_FILL = {
     "good": "#ffffff",
     "warning": "#1a1a19",
-    "serious": "#1a1a19",
     "critical": "#ffffff",
+    "info": "#ffffff",
     "muted": "#ffffff",
 }
 LABEL_STATUS = {
@@ -668,8 +669,6 @@ def _numeric_status(value) -> str:
         return "good"
     if value == 3:
         return "warning"
-    if value == 2:
-        return "serious"
     return "critical"
 
 
@@ -701,13 +700,14 @@ def _stat_tile_html(label: str, value_text: str, status: str) -> str:
     )
 
 
-def _dimension_bar_html(name: str, value, confidence: str) -> str:
+def _dimension_bar_html(name: str, value, confidence: str, evidence: str) -> str:
     status = _numeric_status(value)
     color = STATUS_COLORS[status]
     pct = 0 if value is None else int(value) / 5 * 100
     value_text = "Not assessable" if value is None else f"{value}/5"
+    evidence_html = f'<div style="font-size:12px;opacity:0.6;margin-top:3px;">{html.escape(evidence)}</div>' if evidence else ""
     return (
-        '<div style="margin-bottom:14px;">'
+        '<div style="margin-bottom:16px;">'
         '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">'
         f'<span>{html.escape(name)}</span>'
         f'<span style="opacity:0.65;">{html.escape(value_text)} · {html.escape(confidence or "")} confidence</span>'
@@ -715,18 +715,23 @@ def _dimension_bar_html(name: str, value, confidence: str) -> str:
         '<div style="height:10px;border-radius:5px;background:rgba(128,128,128,0.15);overflow:hidden;">'
         f'<div style="height:100%;width:{pct:.0f}%;border-radius:5px;background:{color};"></div>'
         "</div>"
+        f"{evidence_html}"
         "</div>"
     )
 
 
-def _label_badge_html(name: str, label: str | None, confidence: str) -> str:
+def _label_badge_html(name: str, label: str | None, confidence: str, evidence: str) -> str:
     status = _label_status(label)
     fill = STATUS_COLORS[status]
     text_color = STATUS_TEXT_ON_FILL[status]
+    evidence_html = f'<div style="font-size:12px;opacity:0.6;margin-top:3px;">{html.escape(evidence)}</div>' if evidence else ""
     return (
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
+        '<div style="margin-bottom:16px;">'
+        '<div style="display:flex;justify-content:space-between;align-items:center;">'
         f'<span style="font-size:13px;">{html.escape(name)} <span style="opacity:0.55;">· {html.escape(confidence or "")} confidence</span></span>'
         f'<span style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;background:{fill};color:{text_color};">{html.escape(label or "Unknown")}</span>'
+        "</div>"
+        f"{evidence_html}"
         "</div>"
     )
 
@@ -751,7 +756,7 @@ def render_report_dashboard(report_md: str) -> None:
     tiles_html = (
         '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">'
         + _stat_tile_html("Overall rating", overall_value_text, _numeric_status(overall_rating))
-        + _stat_tile_html("Major issues found", str(len(major_issues)), "critical" if major_issues else "good")
+        + _stat_tile_html("Major issues found", str(len(major_issues)), "info")
         + "</div>"
     )
     st.markdown(tiles_html, unsafe_allow_html=True)
@@ -764,15 +769,17 @@ def render_report_dashboard(report_md: str) -> None:
     for dim in dimensions:
         name = dim.get("name") or dim.get("key") or "Dimension"
         confidence = dim.get("confidence") or ""
+        evidence = dim.get("evidence") or ""
         if dim.get("type") == "label":
-            bars_html.append(_label_badge_html(name, dim.get("value"), confidence))
+            bars_html.append(_label_badge_html(name, dim.get("value"), confidence, evidence))
         else:
-            bars_html.append(_dimension_bar_html(name, dim.get("value"), confidence))
+            bars_html.append(_dimension_bar_html(name, dim.get("value"), confidence, evidence))
     st.markdown("".join(bars_html), unsafe_allow_html=True)
 
     if major_issues:
         st.markdown("##### Major issues found")
         full_issues_md = _extract_section(report_md, "## 7. MAJOR ISSUES FOUND", None)
+        full_issues_md = re.sub(r"^## 7\. MAJOR ISSUES FOUND\s*\n?", "", full_issues_md).strip()
         for i, issue in enumerate(major_issues):
             title = issue.get("title") or f"Issue {i + 1}"
             impact = issue.get("impact") or ""
