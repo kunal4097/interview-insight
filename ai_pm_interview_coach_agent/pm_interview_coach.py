@@ -48,6 +48,7 @@ QUESTION_TYPES = [
     "RCA / business interpretation",
     "Experimentation",
     "Strategy / prioritization",
+    "Technical / systems problem-solving",
     "Behavioral / experience",
     "AI product experience",
 ]
@@ -89,7 +90,7 @@ ASSESSMENT PRINCIPLES
 
 QUESTION-SPECIFIC SKILLS
 
-Classify each question as exactly one of the eight types below - never invent a hybrid or parenthetical label (e.g. "product-sense (diagnosis)"). If a question is genuinely ambiguous, pick the single closest type and say so in one line, rather than inventing a new category. Getting this classification right matters beyond labeling: every later judgment - the framework you grade against, the "why" checklist, which major issues are legitimate - inherits from it. A wrong category doesn't just mislabel the question, it grades the answer against the wrong yardstick entirely.
+Classify each question as exactly one of the types below - never invent a hybrid or parenthetical label (e.g. "product-sense (diagnosis)"). If a question is genuinely ambiguous, pick the single closest type and say so in one line, rather than inventing a new category. Getting this classification right matters beyond labeling: every later judgment - the framework you grade against, the "why" checklist, which major issues are legitimate - inherits from it. A wrong category doesn't just mislabel the question, it grades the answer against the wrong yardstick entirely.
 
 Product sense / design:
 Scope -> goal and rationale -> users -> user selection rationale -> needs -> problem prioritization -> solutions -> tradeoffs -> success measures.
@@ -111,6 +112,10 @@ Decision -> hypothesis -> experiment design -> assignment unit -> metrics and gu
 
 Strategy / prioritization:
 Objective -> alternatives -> constraints -> criteria -> comparison -> justified choice -> risks -> validation.
+
+Technical / systems problem-solving:
+Restate the system boundary and the hardest constraint -> name the edge case explicitly (the one the interviewer is actually probing for, e.g. an unknown or unsupported target system) -> propose a concrete mechanism, not a restated goal -> address ongoing data freshness/continuity, not just the initial connection -> address mapping/normalization into the target structure -> name what breaks and how it is handled -> validate/iterate.
+Starting point: an open-ended technical or architecture problem (data integration, pipeline design, a system that must handle inputs it cannot fully anticipate) where the interviewer is testing structured problem-solving under ambiguity, not a specific product-management framework. Distinct from Strategy/prioritization (which starts from an already-defined set of alternatives to compare) and from Product sense (which starts from a user-facing build brief) - here the candidate has to construct the constraints and edge cases themselves before proposing a mechanism. A candidate who needs the same clarification restated by the interviewer more than once is showing a comprehension gap - fold that into Dimension A's question-comprehension criterion, not just into delivery.
 
 Behavioral / experience:
 Situation -> responsibility -> actions and reasoning -> results -> reflection.
@@ -151,7 +156,7 @@ Avoid decimals, percentiles, and hiring probabilities.
 RATE THESE DIMENSIONS SEPARATELY
 
 A. PM reasoning
-- Question comprehension and fidelity.
+- Question comprehension and fidelity. If the interviewer has to restate or narrow the same question more than once because the candidate answered something else, that is direct evidence against comprehension here - weigh it accordingly, not just as a delivery issue.
 - Problem framing.
 - Relevant domain skills.
 - Quality of "why."

@@ -15,11 +15,11 @@ issues keep recurring across sessions, so prep actually compounds.
 major-issue cards — all before any long text. The full question-by-question breakdown sits behind \
 a single "📋 See the full question-by-question analysis" expander so it's there when you want it \
 and out of the way when you don't.
-- 🧭 **Rubric-matched grading** — recognizes 8 PM question types and applies the structure that \
+- 🧭 **Rubric-matched grading** — recognizes 9 PM question types and applies the structure that \
 fits each one, without penalizing a candidate for skipping steps that don't apply:
   - Product sense / design, Product improvement, Analytics / metrics, RCA / business \
-interpretation, Experimentation, Strategy / prioritization, Behavioral / experience, AI product \
-experience
+interpretation, Experimentation, Strategy / prioritization, Technical / systems problem-solving, \
+Behavioral / experience, AI product experience
 - 📊 **5-dimension rating dashboard** — PM reasoning, Language & communication, Verbal delivery, \
 Interviewer response, and Candidate-expressed sentiment, each scored independently (1–5, or \
 "Not assessable") with an evidence excerpt and a confidence level (High/Medium/Low) — no decimals, \
