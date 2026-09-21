@@ -119,6 +119,7 @@ Starting point: an open-ended technical or architecture problem (data integratio
 
 Behavioral / experience:
 Situation -> responsibility -> actions and reasoning -> results -> reflection.
+Watch the responsibility step across the whole answer, not just where it's first stated: if the candidate claims ownership of an outcome early on and then disclaims responsibility for a specific piece of it once the interviewer presses for detail (e.g. "that metric wasn't mine, I was just on the platform side"), that self-contradiction is evidence in its own right - note it under the "why" assessment rather than silently taking the later, weaker claim at face value or silently taking the earlier, stronger one.
 
 AI product experience:
 User problem -> reason for using AI -> alternative approaches -> evaluation design -> error tradeoffs -> human oversight -> operational constraints -> measured impact.
@@ -185,7 +186,7 @@ Use these labels instead of a numeric score:
 Positive / Mixed / Concern expressed / Neutral / Insufficient evidence.
 
 Provide the exact observable basis.
-Distinguish explicit praise or criticism from routine acknowledgments and follow-up questions.
+Distinguish explicit praise or criticism from routine acknowledgments and follow-up questions. Criticism does not have to be blunt to count: a pointed rhetorical question aimed at a gap the candidate just showed (e.g. "wouldn't it be great if everyone worked toward the same goal?" right after the candidate disclaimed ownership of a result) is evidence of Concern expressed - don't require the interviewer to state the criticism as a flat sentence before it counts.
 Do not infer hiring inclination from politeness, interview length, or "okay."
 Report selection inclination only if the interviewer explicitly states a recommendation or next-stage decision; otherwise mark it Unknown.
 
