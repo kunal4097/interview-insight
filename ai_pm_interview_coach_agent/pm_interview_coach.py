@@ -827,14 +827,81 @@ def _numeric_status(value) -> str:
     return "critical"
 
 
+def _repair_json_quotes(s: str) -> str:
+    """Best-effort repair for two mirror-image mistakes models make around JSON string
+    quoting when a field is meant to carry a verbatim quote (a real, recurring failure -
+    see git history): (1) a literal '"' used mid-content instead of being escaped (gets
+    escaped here), and (2) a '\\"' written where a bare structural quote was meant - either
+    opening a value right after ': '/'['/', ' with no string open yet, or closing one right
+    before a structural ','/'}'/']' - both get their spurious backslash dropped. Whether a
+    quote is "structural" is decided purely by lookahead (only whitespace then ,}]: follows),
+    so a quote embedded in the middle of real content is never touched."""
+    out = []
+    i, n = 0, len(s)
+    in_string = False
+    while i < n:
+        c = s[i]
+        if not in_string:
+            if c == '"':
+                out.append(c)
+                in_string = True
+                i += 1
+                continue
+            if c == "\\" and i + 1 < n and s[i + 1] == '"':
+                out.append('"')
+                in_string = True
+                i += 2
+                continue
+            out.append(c)
+            i += 1
+            continue
+
+        # in_string
+        if c == "\\" and i + 1 < n:
+            nxt = s[i + 1]
+            if nxt == '"':
+                j = i + 2
+                while j < n and s[j] in " \t\r\n":
+                    j += 1
+                if j >= n or s[j] in ",}]":
+                    out.append('"')
+                    in_string = False
+                else:
+                    out.append('\\"')
+                i += 2
+                continue
+            out.append(c)
+            out.append(nxt)
+            i += 2
+            continue
+        if c == '"':
+            j = i + 1
+            while j < n and s[j] in " \t\r\n":
+                j += 1
+            if j >= n or s[j] in ",}]:":
+                out.append(c)
+                in_string = False
+            else:
+                out.append('\\"')
+            i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def _extract_json_summary(report_md: str) -> tuple[dict | None, str | None]:
     match = re.search(r"```json\s*(\{.*?\})\s*```", report_md, re.DOTALL)
     if not match:
         return None, "No JSON summary block found in the response."
+    raw = match.group(1)
     try:
-        return json.loads(match.group(1)), None
+        return json.loads(raw), None
     except json.JSONDecodeError as e:
-        return None, f"JSON parse error: {e}"
+        try:
+            return json.loads(_repair_json_quotes(raw)), None
+        except json.JSONDecodeError:
+            return None, f"JSON parse error: {e}"
 
 
 def _strip_json_block(report_md: str) -> str:
