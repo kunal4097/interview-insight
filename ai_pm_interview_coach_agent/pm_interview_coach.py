@@ -275,6 +275,8 @@ Before producing the report:
 OUTPUT FORMATTING
 Start the response with a fenced JSON block, then the full markdown report. The JSON drives a visual summary in the app's UI - keep every string in it short (it is a condensed pointer to the full report, not a restatement of it).
 
+The JSON must be syntactically valid - it is parsed by a strict parser, not read by a person. This has broken before, so follow it precisely: never wrap a whole field's value in its own quotation marks (" or ') - the JSON string delimiter already marks it as a value, so a field like `excerpt` should just be `"excerpt": "Where will you put in auth?"`, never `"excerpt": "\"Where will you put in auth?\""`. If you need to quote a word or short phrase *within* a longer sentence (e.g. inside `evidence`), use single quotes ('like this') instead of double quotes, since single quotes never need escaping in JSON - avoid embedding literal double-quote characters inside any string value entirely.
+
 ```json
 {
   "headline": "<3-6 words, specific to this interview, not generic - e.g. 'Strong diagnosis, thin justification' not 'Good interview'>",
