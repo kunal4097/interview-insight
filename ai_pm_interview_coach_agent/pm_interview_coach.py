@@ -529,10 +529,13 @@ def _extract_section(md: str, start_marker: str, end_marker: str | None) -> str:
     start = md.find(start_marker)
     if start == -1:
         return ""
-    if end_marker:
-        end = md.find(end_marker, start + len(start_marker))
-        return md[start: end if end != -1 else None].strip()
-    return md[start:].strip()
+    end = md.find(end_marker, start + len(start_marker)) if end_marker else -1
+    if end == -1:
+        # end_marker missing (or none given) - stop at the next top-level header instead of
+        # running to end-of-string, so a model output that skips a section never causes this
+        # extraction to swallow a later section (e.g. Major Issues) into this one too.
+        end = md.find("\n## ", start + len(start_marker))
+    return md[start: end if end != -1 else None].strip()
 
 
 def append_to_log(candidate: str, report_md: str) -> None:
