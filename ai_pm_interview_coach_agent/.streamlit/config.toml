@@ -1,0 +1,12 @@
+# Matches the design tokens in pm_interview_coach.py (read off the reference app's own
+# compiled CSS - see the design-system comment near PAGE_BG/ACCENT_BLUE in that file). Without
+# this, Streamlit's native widgets (primary buttons, sliders, checked checkboxes/radios, input
+# focus rings) fall back to Streamlit's own default red accent instead of the app's blue -
+# not just a stylistic gap, a real mismatch on the most visible elements (every primary button).
+[theme]
+base = "light"
+primaryColor = "#1c66b5"
+backgroundColor = "#eff1f5"
+secondaryBackgroundColor = "#eceff4"
+textColor = "#22293a"
+font = "sans serif"
