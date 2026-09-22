@@ -11,6 +11,7 @@ venv/
 # Personal interview content generated locally - don't publish transcripts/reports
 reports/*.md
 ai_pm_interview_coach_agent/progress_log.md
+/progress-log.md
 
 # Personal design-system asset, not specific to this project - kept local only
 /Canva Apps Design System/
