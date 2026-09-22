@@ -926,7 +926,21 @@ def _extract_section(md: str, start_marker: str, end_marker: str | None) -> str:
 
 
 def append_to_log(candidate: str, report_md: str) -> None:
-    entry_lines = [f"\n### {datetime.now().strftime('%Y-%m-%d %H:%M')} - {candidate or 'Untitled session'}\n"]
+    summary, _ = _extract_json_summary(report_md)
+    meta = {
+        "headline": (summary or {}).get("headline") or candidate or "Untitled session",
+        "overall_read": (summary or {}).get("overall_read") or "",
+        "question_types": (summary or {}).get("question_types") or "Not provided",
+        "source_quality": (summary or {}).get("source_quality") or "Not provided",
+        "reported_outcome": (summary or {}).get("reported_outcome") or "Not provided",
+        "major_issues_count": len((summary or {}).get("major_issues") or []),
+    }
+    # A distinct fence label (not "json") so this block is never mistaken for the report's own
+    # JSON summary if _extract_json_summary is ever pointed at log content.
+    entry_lines = [
+        f"\n### {datetime.now().strftime('%Y-%m-%d %H:%M')} - {candidate or 'Untitled session'}\n",
+        "```logmeta\n" + json.dumps(meta) + "\n```\n",
+    ]
 
     snapshot_and_dashboard = _extract_section(report_md, "## 1. Snapshot", "## 4. Question-by-Question Assessment")
     major_issues = _extract_section(report_md, "## 9. MAJOR ISSUES FOUND", None)
@@ -951,6 +965,82 @@ def read_log() -> str:
         return ""
     with open(LOG_PATH) as f:
         return f.read()
+
+
+def _parse_log_entries(log_content: str) -> list:
+    """Splits the log into per-session entries, pulling the structured ```logmeta block out
+    when present so the Progress Log tab can render cards instead of a raw markdown dump.
+    Entries written before this format existed (no meta block) still show up, just without
+    the card's richer fields - never lose old sessions over a format change."""
+    entries = []
+    matches = list(re.finditer(r"^### (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) - (.*)$", log_content, re.MULTILINE))
+    for i, m in enumerate(matches):
+        date_str, header_title = m.group(1), m.group(2).strip()
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(log_content)
+        body = log_content[start:end].strip()
+        meta = {}
+        meta_match = re.match(r"```logmeta\s*(\{.*?\})\s*```", body, re.DOTALL)
+        if meta_match:
+            try:
+                meta = json.loads(meta_match.group(1))
+            except json.JSONDecodeError:
+                meta = {}
+            body = body[meta_match.end():].strip()
+        entries.append({
+            "date": date_str,
+            "headline": meta.get("headline") or header_title,
+            "overall_read": meta.get("overall_read") or "",
+            "question_types": meta.get("question_types") or "Not provided",
+            "source_quality": meta.get("source_quality") or "Not provided",
+            "reported_outcome": meta.get("reported_outcome") or "Not provided",
+            "major_issues_count": meta.get("major_issues_count"),
+            "body": body,
+        })
+    entries.reverse()
+    return entries
+
+
+def _meta_row_plain_html(items: list) -> str:
+    cols = []
+    for label, value in items:
+        cols.append(
+            '<div style="flex:1;min-width:120px;">'
+            f'<div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:{TEXT_MUTED};margin-bottom:4px;">{html.escape(label)}</div>'
+            f'<div style="font-family:{FONT_SANS};font-size:13.5px;color:{TEXT_PRIMARY};">{html.escape(value) if value else "—"}</div>'
+            "</div>"
+        )
+    return '<div style="display:flex;gap:24px;flex-wrap:wrap;">' + "".join(cols) + "</div>"
+
+
+def _log_entry_card_html(entry: dict) -> str:
+    issues_n = entry.get("major_issues_count")
+    if isinstance(issues_n, int):
+        pill_text = f"{issues_n} issue{'s' if issues_n != 1 else ''} found" if issues_n > 0 else "No major issues"
+        pill_status = "warning" if issues_n > 0 else "good"
+    else:
+        pill_text, pill_status = "Logged", "muted"
+    desc_html = (
+        f'<div style="font-family:{FONT_SANS};font-size:13.5px;color:{TEXT_SECONDARY};line-height:1.5;margin-top:8px;">{html.escape(entry["overall_read"])}</div>'
+        if entry["overall_read"] else ""
+    )
+    return (
+        f'<div style="background:{CARD_BG};border:{CARD_BORDER};border-radius:14px;padding:20px 22px;">'
+        '<div style="display:flex;gap:12px;">'
+        f'<div style="width:34px;height:34px;border-radius:8px;background:{ACCENT_BLUE_BG};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">📄</div>'
+        '<div style="flex:1;">'
+        f'{_chip_html(pill_text, pill_status)} <span style="font-family:{FONT_SANS};font-size:12px;color:{TEXT_MUTED};margin-left:6px;">{html.escape(entry["date"])}</span>'
+        f'<div style="font-family:{FONT_SERIF};font-weight:600;font-size:18px;color:{TEXT_PRIMARY};margin-top:8px;">{html.escape(entry["headline"])}</div>'
+        f"{desc_html}"
+        "</div></div>"
+        '<hr style="border:none;border-top:1px solid #eee;margin:16px 0;">'
+        + _meta_row_plain_html([
+            ("Question types", entry["question_types"]),
+            ("Source", entry["source_quality"]),
+            ("Outcome", entry["reported_outcome"]),
+        ])
+        + "</div>"
+    )
 
 
 def _derive_session_label(report_md: str) -> str:
@@ -1051,6 +1141,17 @@ def _inject_design_system() -> None:
         .pmic-subtitle {{
             font-family: {FONT_SANS}; font-size: 14.5px; color: {TEXT_SECONDARY};
             line-height: 1.55; margin: 0 0 4px;
+        }}
+        /* Force a plain, obviously-editable border on text fields - Streamlit's own default
+           can render a red/invalid-looking border on an empty required-ish field, which reads
+           as broken rather than "click here to type". */
+        [data-testid="stTextArea"] textarea, [data-testid="stTextInput"] input {{
+            border-color: #d7dce5 !important;
+            box-shadow: none !important;
+        }}
+        [data-testid="stTextArea"] textarea:focus, [data-testid="stTextInput"] input:focus {{
+            border-color: {ACCENT_BLUE} !important;
+            box-shadow: 0 0 0 1px {ACCENT_BLUE} !important;
         }}
         </style>
         """,
@@ -1593,14 +1694,11 @@ with st.sidebar:
     st.caption(f"Notes/transcripts stay local to this app - the only network call is to the {provider} API.")
     st.caption("Reports are written to omit names, contact details, employers, and other identifying background.")
 
-st.title("🎯 AI PM Interview Coach")
-st.caption(
-    "An anonymous, evidence-backed PM interview assessment. Give it Granola notes and/or a "
-    "transcript and get back a rating dashboard, a question-by-question breakdown against the "
-    "rubric that fits each question, an improved-answer rewrite, a practice plan, and the top "
-    "evidence-backed issues to fix - ranked by impact, not by how easy they are to count."
+st.markdown(
+    f'<div style="font-family:{FONT_SANS};font-size:13px;color:{TEXT_SECONDARY};padding:2px 0 14px;">'
+    "🎯 AI PM Interview Coach · a quieter way to prep for your next one</div>",
+    unsafe_allow_html=True,
 )
-st.caption("**Question types recognized:** " + " · ".join(QUESTION_TYPES))
 
 tab_analyze, tab_log = st.tabs(["📝 Assessment", "📈 Progress Log"])
 
@@ -2005,7 +2103,19 @@ with tab_log:
     if not log_content.strip():
         st.info("No sessions logged yet - run an assessment first.")
     else:
-        st.markdown(log_content)
+        entries = _parse_log_entries(log_content)
+        st.markdown(
+            _section_header_html("Your workspace", "Interview library", f"{len(entries)} session{'s' if len(entries) != 1 else ''} logged."),
+            unsafe_allow_html=True,
+        )
+        for i, entry in enumerate(entries):
+            st.markdown(_log_entry_card_html(entry), unsafe_allow_html=True)
+            with st.expander("See full snapshot and major issues from this session"):
+                st.markdown(entry["body"] or "Not available.")
+            if i < len(entries) - 1:
+                st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
+
+        st.markdown('<div style="height:8px;"></div>', unsafe_allow_html=True)
         if st.button("Summarize recurring issues across all sessions"):
             if not api_key:
                 st.error(f"Add your {provider} API key in the sidebar first.")
