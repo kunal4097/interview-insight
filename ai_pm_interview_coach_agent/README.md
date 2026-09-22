@@ -139,24 +139,24 @@ source" button. Your browser opens Granola's sign-in/approval page; approve acce
 the app (it's waiting on a local callback, no copy-pasting a code or URL). Run `pip install mcp` \
 first (not in `requirements.txt` by default — see Notes below). Once connected, your recent calls \
 load automatically into a browsable, searchable list — filter by title and click **Select** on \
-one; its transcript (and summary, when the call list carries one) flow straight into the \
-assessment fields below. If Granola's response for a given account/server can't be parsed into a \
-recognizable call list (see the note below on why this can happen), the app falls back to a raw \
-tool console instead — pick a tool, check its real input schema, call it, and pull the result in \
-manually with **Use as summary** / **Use as transcript**.
+one. If Granola's response for a given account/server can't be parsed into a recognizable call \
+list (see the note below on why this can happen), the app falls back to a raw tool console \
+instead — pick a tool, check its real input schema, call it, and pull the result in manually with \
+**Use as summary** / **Use as transcript**.
 - **API key** (Business/Enterprise plan) — open "Have a Granola API key instead?", paste your key \
 (`grn_...` — generate one in the Granola desktop app under Settings → API access) and click \
-**Connect**. Browse by folder, search loaded titles, and click **Select** on one — summary and \
-transcript load automatically (the app pages through Granola's transcript endpoint itself when a \
-transcript is too large to return inline).
+**Connect**. Browse by folder, search loaded titles, and click **Select** on one.
 
-**Then, either way:**
-
-Add optional context if you like, click **Run Assessment**, and **read the report** — a debrief \
-header, the five-dimension rating rubric, conversation signals measured from the transcript, how \
-the answers landed, a question-by-question breakdown, an improved-answer rewrite, a practice plan, \
-and the top issues found. Download it as markdown. Check the **Progress Log** tab after a few \
-sessions and click **Summarize recurring issues** to see what keeps costing you points.
+**Then, either way:** clicking **Select** takes you to a dedicated review screen — "This is the \
+transcript" — showing exactly what will be assessed (and the summary, when the call carries one), \
+with **← Back to calls** to pick a different one instead. Add optional context if you like, click \
+**Run Assessment**, and you land on a dedicated report screen: a debrief header, the \
+five-dimension rating rubric, conversation signals measured from the transcript, how the answers \
+landed, a question-by-question breakdown, an improved-answer rewrite, a practice plan, and the top \
+issues found. Download it as markdown, or click **← Start a new assessment** to go back to the \
+call list (your Granola connection stays live — no need to reconnect). Check the **Progress Log** \
+tab after a few sessions and click **Summarize recurring issues** to see what keeps costing you \
+points.
 
 ## 📝 Example Input
 

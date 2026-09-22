@@ -805,6 +805,9 @@ def _render_mcp_raw_console(tool_names: list, tool_schemas: dict) -> None:
                 st.session_state["mcp_pulled_summary"] = mcp_pull_text
             if use_as_transcript:
                 st.session_state["mcp_pulled_transcript"] = mcp_pull_text
+            if use_as_summary or use_as_transcript:
+                st.session_state["view"] = "review"
+                st.rerun()
 
 
 # --- Conversation signals (deterministic, computed from the raw transcript text) ------------
@@ -956,38 +959,40 @@ def run_assessment_flow(provider: str, api_key: str, model: str, summary: str, t
 # degrades gracefully to the plain markdown - the report is never held hostage by the summary.
 
 STATUS_COLORS = {
-    "good": "#128a45",
-    "warning": "#ffb302",
-    "critical": "#d31d3c",
-    "info": "#1a56e0",
-    "muted": "#6b6b6b",
+    "good": "#009966",
+    "warning": "#973c00",
+    "critical": "#e7000b",
+    "info": "#1c66b5",
+    "muted": "#687487",
 }
-# Canva Apps Design System's light-mode *subtle* feedback tokens - pastel fill + matching
-# dark-toned text, built for exactly this "chip" job (readable on white, never color-alone).
-CHIP_BG = {"good": "#e3f6ea", "warning": "#fff4d6", "critical": "#ffe6ea", "info": "#e6edff", "muted": "#f2f1ee"}
-CHIP_FG = {"good": "#0c6533", "warning": "#7a5400", "critical": "#a3122c", "info": "#123db0", "muted": "#5b5a56"}
+# Subtle chip tokens: light steps of the same Tailwind emerald/amber/red/secondary-blue scales
+# the reference app's own compiled CSS actually uses, paired with a darker step of the same
+# family for text (readable on white, never color-alone).
+CHIP_BG = {"good": "#ecfdf5", "warning": "#fffbeb", "critical": "#fef2f2", "info": "#e3eaf2", "muted": "#eceff4"}
+CHIP_FG = {"good": "#007a55", "warning": "#973c00", "critical": "#e7000b", "info": "#29496b", "muted": "#687487"}
 
 # Explicit light theme for the report card itself, independent of Streamlit's own theme setting -
 # this is meant to read like a printed debrief, not adapt to whatever chrome it's embedded in.
 CARD_BG = "#ffffff"
-CARD_BORDER = "1px solid #e2e4ea"
-TEXT_PRIMARY = "#15171c"
-TEXT_SECONDARY = "rgba(21,23,28,0.66)"
-TEXT_MUTED = "rgba(21,23,28,0.46)"
+CARD_BORDER = "1px solid #d7dce5"
+TEXT_PRIMARY = "#22293a"
+TEXT_SECONDARY = "#687487"
+TEXT_MUTED = "rgba(34,41,58,0.44)"
 
-# Editorial-debrief design system: cool-gray page, serif display headlines over a plain sans
-# body, a single blue accent for eyebrows/links/primary actions, and reuses the Canva-based
-# STATUS_COLORS/CHIP_BG/CHIP_FG above for every semantic (good/warning/critical) accent rather
-# than inventing a second palette - only the neutral/typography layer is new here.
-PAGE_BG = "#eef0f3"
-SURFACE_MUTED = "#f4f5f8"
-ACCENT_BLUE = "#2f54d6"
-ACCENT_BLUE_BG = "#e9edfb"
-GRAY_PILL_BG = "#eceef2"
-GRAY_PILL_FG = "#565a66"
-FONT_SERIF = "'Lora', Georgia, 'Times New Roman', serif"
-FONT_SANS = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-RATING_ACCENT = {"good": "#157a44", "warning": "#b7791f", "critical": "#b3261e", "muted": "#8a8d99"}
+# Editorial-debrief design system - tokens read directly off the reference app's own compiled
+# CSS (its shadcn/Tailwind :root theme block and Google Fonts @import), not eyeballed from
+# screenshots: cool-gray page, Fraunces serif display headlines over DM Sans body, a single
+# steel-blue accent for eyebrows/links/primary actions, and status chips built from Tailwind's
+# own emerald/amber/red/secondary-blue scales at the same shades the reference actually uses.
+PAGE_BG = "#eff1f5"
+SURFACE_MUTED = "#eceff4"
+ACCENT_BLUE = "#1c66b5"
+ACCENT_BLUE_BG = "#e3eaf2"
+GRAY_PILL_BG = "#eceff4"
+GRAY_PILL_FG = "#687487"
+FONT_SERIF = "'Fraunces', Georgia, 'Times New Roman', serif"
+FONT_SANS = "'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+RATING_ACCENT = {"good": "#007a55", "warning": "#973c00", "critical": "#e7000b", "muted": "#687487"}
 
 
 def _inject_design_system() -> None:
@@ -995,7 +1000,7 @@ def _inject_design_system() -> None:
         f"""
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-        <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
         <style>
         .stApp {{ background: {PAGE_BG}; }}
         [data-testid="stAppViewContainer"] {{ background: {PAGE_BG}; }}
@@ -1005,11 +1010,11 @@ def _inject_design_system() -> None:
             margin: 0 0 6px;
         }}
         .pmic-h1 {{
-            font-family: {FONT_SERIF}; font-weight: 700; font-size: 32px;
+            font-family: {FONT_SERIF}; font-weight: 600; font-size: 32px;
             line-height: 1.18; color: {TEXT_PRIMARY}; margin: 0 0 8px;
         }}
         .pmic-h2 {{
-            font-family: {FONT_SERIF}; font-weight: 700; font-size: 21px;
+            font-family: {FONT_SERIF}; font-weight: 600; font-size: 21px;
             line-height: 1.28; color: {TEXT_PRIMARY}; margin: 0 0 4px;
         }}
         .pmic-subtitle {{
@@ -1551,190 +1556,53 @@ st.caption("**Question types recognized:** " + " · ".join(QUESTION_TYPES))
 tab_analyze, tab_log = st.tabs(["📝 Assessment", "📈 Progress Log"])
 
 with tab_analyze:
-    header_left, header_right = st.columns([5, 2])
-    with header_left:
-        st.markdown(
-            _section_header_html("Your workspace", "Bring an interview to review", "Connect Granola, or add a transcript manually - both are available here."),
-            unsafe_allow_html=True,
-        )
-    with header_right:
-        st.write("")
-        st.write("")
-        with st.popover("➕ Add manually", use_container_width=True):
-            st.markdown('<div class="pmic-eyebrow">Manual transcript</div>', unsafe_allow_html=True)
-            with st.expander("Additional context (optional, but improves the assessment)"):
-                summary = st.text_area(
-                    "Interview summary (e.g. Granola's AI-generated notes)",
-                    height=150,
-                    placeholder="Paste the meeting summary/notes here, if you have them separately from the raw transcript...",
-                )
-                col1, col2 = st.columns(2)
-                with col1:
-                    target_role = st.text_input("Target role", placeholder="e.g. Senior PM, Growth")
-                with col2:
-                    outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS)
-                question_context = st.text_area(
-                    "Question context",
-                    height=80,
-                    placeholder="e.g. 45-minute product sense round, panel of two interviewers...",
-                )
-                outcome_other = ""
-                if outcome == "Other (describe below)":
-                    outcome_other = st.text_input("Describe the outcome")
+    view = st.session_state.get("view", "browse")
 
-            upload = st.file_uploader("Upload a transcript (.txt)", type=["txt"])
-            default_text = upload.read().decode("utf-8") if upload else ""
-            transcript = st.text_area(
-                "Transcript",
-                value=default_text,
-                height=300,
-                placeholder="Interviewer: Let's start with a product sense question...\nCandidate: Sure, so I'd first want to understand...",
-            )
+    if view == "report":
+        # A dedicated result screen, not the report appended below an ever-growing page -
+        # starting a new assessment clears the current selection/report but keeps the Granola
+        # connection and its loaded call list alive, so "back to see all the calls" is instant.
+        if st.button("← Start a new assessment", key="report_back_btn"):
+            for k in [
+                "last_report", "last_report_truncated", "last_signals", "last_report_time",
+                "granola_selected_note", "granola_mcp_selected_meeting", "mcp_pulled_summary", "mcp_pulled_transcript",
+            ]:
+                st.session_state.pop(k, None)
+            st.session_state["view"] = "browse"
+            st.rerun()
+        render_last_report("assessment")
 
-            analyze_clicked = st.button("Run Assessment", type="primary", use_container_width=True)
-
-            if analyze_clicked:
-                resolved_outcome = outcome_other.strip() if outcome == "Other (describe below)" and outcome_other.strip() else outcome
-                run_assessment_flow(provider, api_key, model, summary, transcript, target_role, question_context, resolved_outcome, candidate_name)
-
-    st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
-
-    connected_rest = bool(st.session_state.get("granola_connected"))
-    connected_mcp = bool(st.session_state.get("granola_mcp_tools"))
-
-    if not connected_rest and not connected_mcp:
-        st.markdown(_section_header_html("Connect a source", "Pull straight from Granola", ""), unsafe_allow_html=True)
-        st.markdown(
-            f'<div style="background:{CARD_BG};border:{CARD_BORDER};border-radius:14px;padding:22px 24px 6px;margin-bottom:2px;">'
-            f'<div style="font-family:{FONT_SANS};font-size:14px;color:{TEXT_SECONDARY};line-height:1.6;">'
-            "Works on any Granola plan, including Basic - no API key needed. Your recent calls load "
-            "automatically into a browsable list once connected." "</div></div>",
-            unsafe_allow_html=True,
-        )
-        if st.button("🎧 Connect via MCP", type="primary", use_container_width=True):
-            with st.spinner("Opening Granola in your browser - approve access there to continue (up to 3 minutes)..."):
-                try:
-                    tools = granola_mcp_connect()
-                except GranolaAPIError as e:
-                    st.error(str(e))
-                else:
-                    st.session_state["granola_mcp_tools"] = tools
-                    st.rerun()
-        with st.expander("Have a Granola API key instead? (Business/Enterprise plan)"):
-            granola_key_input = st.text_input(
-                "Granola API key",
-                type="password",
-                placeholder="grn_...",
-                help="Generate one in the Granola desktop app, under Settings → API access.",
-            )
-            if st.button("Connect", type="primary", key="granola_key_connect_btn"):
-                if not granola_key_input:
-                    st.error("Enter your Granola API key first.")
-                else:
-                    with st.spinner("Checking your key..."):
-                        try:
-                            granola_request(granola_key_input, "/notes", {"page_size": 1})
-                        except GranolaAPIError as e:
-                            st.error(str(e))
-                        else:
-                            st.session_state["granola_connected"] = True
-                            st.session_state["granola_key"] = granola_key_input
-                            for k in ["granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
-                                st.session_state.pop(k, None)
-                            st.rerun()
-
-    elif connected_rest:
-        st.markdown(_section_header_html("Connected via API key", "Your recent interviews", ""), unsafe_allow_html=True)
-        granola_key = st.session_state["granola_key"]
-
-        top_left, top_right = st.columns([4, 1])
-        with top_right:
-            if st.button("Disconnect", key="granola_key_disconnect"):
-                for k in ["granola_connected", "granola_key", "granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
-                    st.session_state.pop(k, None)
-                st.rerun()
-
-        if "granola_folders" not in st.session_state:
-            try:
-                st.session_state["granola_folders"] = granola_list_all_folders(granola_key)
-            except GranolaAPIError as e:
-                st.session_state["granola_folders"] = []
-                st.warning(f"Couldn't load folders: {e}")
-
-        folder_options = {"All folders": None}
-        for f in st.session_state["granola_folders"]:
-            folder_options[f["name"]] = f["id"]
-        with top_left:
-            folder_label = st.selectbox("Folder", list(folder_options.keys()))
-        selected_folder_id = folder_options[folder_label]
-
-        if "granola_notes" not in st.session_state or st.session_state.get("granola_folder_id") != selected_folder_id:
-            try:
-                notes, has_more, cursor = granola_list_notes(granola_key, folder_id=selected_folder_id, page_size=20)
-            except GranolaAPIError as e:
-                st.error(str(e))
-                notes, has_more, cursor = [], False, None
-            st.session_state["granola_notes"] = notes
-            st.session_state["granola_has_more"] = has_more
-            st.session_state["granola_cursor"] = cursor
-            st.session_state["granola_folder_id"] = selected_folder_id
-
-        search = st.text_input("Filter loaded interviews by title", placeholder="Search...")
-        notes = st.session_state["granola_notes"]
-        if search:
-            notes = [n for n in notes if search.lower() in (n.get("title") or "").lower()]
-
-        if not notes:
-            st.info("No interviews found. Only meetings with a generated Granola summary appear here.")
-
-        for note in notes:
-            title = note.get("title") or "Untitled interview"
-            created = (note.get("created_at") or "")[:10]
-            owner = (note.get("owner") or {}).get("name") or (note.get("owner") or {}).get("email") or ""
-            row = st.columns([5, 2, 2, 1])
-            row[0].markdown(f"**{title}**")
-            row[1].caption(created)
-            row[2].caption(owner)
-            if row[3].button("Select", key=f"select_{note['id']}"):
-                with st.spinner("Fetching interview details..."):
-                    try:
-                        st.session_state["granola_selected_note"] = granola_get_note(granola_key, note["id"])
-                    except GranolaAPIError as e:
-                        st.error(str(e))
-
-        if st.session_state.get("granola_has_more"):
-            if st.button("Load more interviews"):
-                try:
-                    more_notes, has_more, cursor = granola_list_notes(
-                        granola_key, folder_id=selected_folder_id, cursor=st.session_state["granola_cursor"], page_size=20
-                    )
-                    st.session_state["granola_notes"] = st.session_state["granola_notes"] + more_notes
-                    st.session_state["granola_has_more"] = has_more
-                    st.session_state["granola_cursor"] = cursor
-                    st.rerun()
-                except GranolaAPIError as e:
-                    st.error(str(e))
+    elif view == "review":
+        # The confirmation step between "picked a call" and "ran the assessment" - see the
+        # actual transcript that will be assessed before committing, with an explicit way back.
+        if st.button("← Back to calls", key="review_back_btn"):
+            for k in ["granola_selected_note", "granola_mcp_selected_meeting", "mcp_pulled_summary", "mcp_pulled_transcript"]:
+                st.session_state.pop(k, None)
+            st.session_state["view"] = "browse"
+            st.rerun()
 
         selected_note = st.session_state.get("granola_selected_note")
-        if selected_note:
-            st.divider()
-            st.subheader(selected_note.get("title") or "Untitled interview")
+        selected_meeting = st.session_state.get("granola_mcp_selected_meeting")
 
+        if selected_note:
+            title = selected_note.get("title") or "Untitled interview"
             g_summary = selected_note.get("summary_markdown") or selected_note.get("summary_text") or ""
             transcript_items = selected_note.get("transcript")
             g_transcript = format_granola_transcript(transcript_items) if transcript_items else ""
 
+            st.markdown(_section_header_html("This is the transcript", title, ""), unsafe_allow_html=True)
             if g_summary:
                 st.markdown("**Summary**")
                 st.markdown(g_summary)
             else:
                 st.caption("No summary available for this interview.")
-
             if not g_transcript:
                 st.caption(
                     "No transcript for this interview - the assessment will run on the summary "
                     "alone. Verbal-delivery ratings will come back \"Not assessable.\""
                 )
+            else:
+                st.text_area("Transcript", value=g_transcript, height=260, key="review_rest_transcript_display", disabled=True)
 
             with st.expander("Additional context (optional, but improves the assessment)"):
                 g_col1, g_col2 = st.columns(2)
@@ -1749,113 +1617,20 @@ with tab_analyze:
 
             if st.button("Run Assessment on this interview", type="primary", use_container_width=True):
                 g_resolved_outcome = g_outcome_other.strip() if g_outcome == "Other (describe below)" and g_outcome_other.strip() else g_outcome
-                session_label = selected_note.get("title") or "Granola interview"
-                run_assessment_flow(provider, api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, session_label)
-
-    elif connected_mcp:
-        st.markdown(_section_header_html("Connected via MCP", "Your recent calls", ""), unsafe_allow_html=True)
-
-        MCP_SESSION_KEYS = [
-            "granola_mcp_tools", "granola_mcp_tool_schemas", "granola_mcp_tokens", "granola_mcp_client_info",
-            "granola_mcp_last_result", "granola_mcp_meetings", "granola_mcp_meetings_found", "granola_mcp_meetings_error",
-            "granola_mcp_selected_meeting", "mcp_pulled_summary", "mcp_pulled_transcript",
-        ]
-
-        tool_names = st.session_state["granola_mcp_tools"]
-        tool_schemas = st.session_state.get("granola_mcp_tool_schemas", {})
-
-        top_left, top_right = st.columns([4, 1])
-        with top_left:
-            st.caption(f"{len(tool_names)} tools available.")
-        with top_right:
-            if st.button("Disconnect", key="granola_mcp_disconnect"):
-                for k in MCP_SESSION_KEYS:
-                    st.session_state.pop(k, None)
+                run_assessment_flow(provider, api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, title)
+                st.session_state["view"] = "report"
                 st.rerun()
 
-        # Auto-load the call list once per connection - this is what makes MCP feel like
-        # "one connected experience" instead of a manual tool console the user has to drive.
-        if "list_meetings" in tool_names and "granola_mcp_meetings" not in st.session_state:
-            with st.spinner("Loading your recent calls..."):
-                try:
-                    result = granola_mcp_call_tool("list_meetings", {})
-                except GranolaAPIError as e:
-                    st.session_state["granola_mcp_meetings_error"] = str(e)
-                    st.session_state["granola_mcp_meetings"] = []
-                    st.session_state["granola_mcp_meetings_found"] = False
-                else:
-                    if result["is_error"]:
-                        st.session_state["granola_mcp_meetings_error"] = result["text"] or "list_meetings returned an error."
-                        st.session_state["granola_mcp_meetings"] = []
-                        st.session_state["granola_mcp_meetings_found"] = False
-                    else:
-                        meetings = _find_meeting_list(result)
-                        st.session_state["granola_mcp_meetings"] = meetings or []
-                        st.session_state["granola_mcp_meetings_found"] = meetings is not None
-
-        meetings_found = st.session_state.get("granola_mcp_meetings_found", False)
-
-        if meetings_found:
-            meetings = st.session_state.get("granola_mcp_meetings", [])
-            list_top_left, list_top_right = st.columns([4, 1])
-            with list_top_left:
-                search = st.text_input("Filter your calls by title", placeholder="Search...", key="mcp_meeting_search")
-            with list_top_right:
-                st.write("")
-                if st.button("🔄 Refresh", key="mcp_refresh_meetings"):
-                    for k in ["granola_mcp_meetings", "granola_mcp_meetings_found", "granola_mcp_meetings_error"]:
-                        st.session_state.pop(k, None)
-                    st.rerun()
-
-            visible = [m for m in meetings if search.lower() in _meeting_title(m).lower()] if search else meetings
-            if not meetings:
-                st.info("No calls found via MCP yet.")
-            elif not visible:
-                st.info("No calls match your search.")
-            for m in visible:
-                mid = _meeting_id(m)
-                row = st.columns([6, 2, 1])
-                row[0].markdown(f"**{_meeting_title(m)}**")
-                row[1].caption(_meeting_date(m))
-                if row[2].button("Select", key=f"mcp_select_{mid}"):
-                    id_arg = _tool_id_arg_name(tool_schemas.get("get_meeting_transcript", {}))
-                    with st.spinner("Fetching transcript..."):
-                        try:
-                            t_result = granola_mcp_call_tool("get_meeting_transcript", {id_arg: mid})
-                        except GranolaAPIError as e:
-                            st.error(str(e))
-                        else:
-                            if t_result["is_error"]:
-                                st.error(t_result["text"] or "Couldn't fetch the transcript for this call.")
-                            else:
-                                st.session_state["granola_mcp_selected_meeting"] = m
-                                st.session_state["mcp_pulled_summary"] = _meeting_summary(m)
-                                st.session_state["mcp_pulled_transcript"] = t_result.get("text") or ""
-                                st.rerun()
-
-            with st.expander("Advanced: raw tool console"):
-                _render_mcp_raw_console(tool_names, tool_schemas)
-        else:
-            if st.session_state.get("granola_mcp_meetings_error"):
-                st.warning(f"Couldn't load your call list: {st.session_state['granola_mcp_meetings_error']}")
-            else:
-                st.info(
-                    "Couldn't build a browsable call list from this server's response - Granola hasn't "
-                    "published exact MCP output schemas for third-party clients, so this falls back to the "
-                    "raw tool console below rather than guessing at a shape that might be wrong."
-                )
-            _render_mcp_raw_console(tool_names, tool_schemas)
-
-        selected_meeting = st.session_state.get("granola_mcp_selected_meeting")
-        if st.session_state.get("mcp_pulled_summary") or st.session_state.get("mcp_pulled_transcript"):
-            st.divider()
-            st.subheader(_meeting_title(selected_meeting) if selected_meeting else "Run assessment on the pulled content")
+        elif selected_meeting or st.session_state.get("mcp_pulled_summary") or st.session_state.get("mcp_pulled_transcript"):
+            title = _meeting_title(selected_meeting) if selected_meeting else "Granola interview (via MCP)"
+            st.markdown(_section_header_html("This is the transcript", title, ""), unsafe_allow_html=True)
             mcp_summary = st.text_area(
                 "Summary", value=st.session_state.get("mcp_pulled_summary", ""), height=120, key="mcp_summary_field"
             )
             mcp_transcript = st.text_area(
-                "Transcript", value=st.session_state.get("mcp_pulled_transcript", ""), height=200, key="mcp_transcript_field"
+                "Transcript", value=st.session_state.get("mcp_pulled_transcript", ""), height=260, key="mcp_transcript_field"
             )
+
             with st.expander("Additional context (optional, but improves the assessment)"):
                 mcp_col1, mcp_col2 = st.columns(2)
                 with mcp_col1:
@@ -1869,10 +1644,280 @@ with tab_analyze:
 
             if st.button("Run Assessment on this content", type="primary", use_container_width=True):
                 mcp_resolved_outcome = mcp_outcome_other.strip() if mcp_outcome == "Other (describe below)" and mcp_outcome_other.strip() else mcp_outcome
-                session_label = _meeting_title(selected_meeting) if selected_meeting else "Granola interview (via MCP)"
-                run_assessment_flow(provider, api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, session_label)
+                run_assessment_flow(provider, api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, title)
+                st.session_state["view"] = "report"
+                st.rerun()
 
-    render_last_report("assessment")
+        else:
+            # No selection to review (e.g. a stale rerun) - bounce back to browse rather than
+            # showing an empty screen.
+            st.session_state["view"] = "browse"
+            st.rerun()
+
+    else:
+        header_left, header_right = st.columns([5, 2])
+        with header_left:
+            st.markdown(
+                _section_header_html("Your workspace", "Bring an interview to review", "Connect Granola, or add a transcript manually - both are available here."),
+                unsafe_allow_html=True,
+            )
+        with header_right:
+            st.write("")
+            st.write("")
+            with st.popover("➕ Add manually", use_container_width=True):
+                st.markdown('<div class="pmic-eyebrow">Manual transcript</div>', unsafe_allow_html=True)
+                with st.expander("Additional context (optional, but improves the assessment)"):
+                    summary = st.text_area(
+                        "Interview summary (e.g. Granola's AI-generated notes)",
+                        height=150,
+                        placeholder="Paste the meeting summary/notes here, if you have them separately from the raw transcript...",
+                    )
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        target_role = st.text_input("Target role", placeholder="e.g. Senior PM, Growth")
+                    with col2:
+                        outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS)
+                    question_context = st.text_area(
+                        "Question context",
+                        height=80,
+                        placeholder="e.g. 45-minute product sense round, panel of two interviewers...",
+                    )
+                    outcome_other = ""
+                    if outcome == "Other (describe below)":
+                        outcome_other = st.text_input("Describe the outcome")
+
+                upload = st.file_uploader("Upload a transcript (.txt)", type=["txt"])
+                default_text = upload.read().decode("utf-8") if upload else ""
+                transcript = st.text_area(
+                    "Transcript",
+                    value=default_text,
+                    height=300,
+                    placeholder="Interviewer: Let's start with a product sense question...\nCandidate: Sure, so I'd first want to understand...",
+                )
+
+                analyze_clicked = st.button("Run Assessment", type="primary", use_container_width=True)
+
+                if analyze_clicked:
+                    resolved_outcome = outcome_other.strip() if outcome == "Other (describe below)" and outcome_other.strip() else outcome
+                    run_assessment_flow(provider, api_key, model, summary, transcript, target_role, question_context, resolved_outcome, candidate_name)
+                    st.session_state["view"] = "report"
+                    st.rerun()
+
+        st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+
+        connected_rest = bool(st.session_state.get("granola_connected"))
+        connected_mcp = bool(st.session_state.get("granola_mcp_tools"))
+
+        if not connected_rest and not connected_mcp:
+            st.markdown(_section_header_html("Connect a source", "Pull straight from Granola", ""), unsafe_allow_html=True)
+            st.markdown(
+                f'<div style="background:{CARD_BG};border:{CARD_BORDER};border-radius:14px;padding:22px 24px 6px;margin-bottom:2px;">'
+                f'<div style="font-family:{FONT_SANS};font-size:14px;color:{TEXT_SECONDARY};line-height:1.6;">'
+                "Works on any Granola plan, including Basic - no API key needed. Your recent calls load "
+                "automatically into a browsable list once connected." "</div></div>",
+                unsafe_allow_html=True,
+            )
+            if st.button("🎧 Connect via MCP", type="primary", use_container_width=True):
+                with st.spinner("Opening Granola in your browser - approve access there to continue (up to 3 minutes)..."):
+                    try:
+                        tools = granola_mcp_connect()
+                    except GranolaAPIError as e:
+                        st.error(str(e))
+                    else:
+                        st.session_state["granola_mcp_tools"] = tools
+                        st.rerun()
+            with st.expander("Have a Granola API key instead? (Business/Enterprise plan)"):
+                granola_key_input = st.text_input(
+                    "Granola API key",
+                    type="password",
+                    placeholder="grn_...",
+                    help="Generate one in the Granola desktop app, under Settings → API access.",
+                )
+                if st.button("Connect", type="primary", key="granola_key_connect_btn"):
+                    if not granola_key_input:
+                        st.error("Enter your Granola API key first.")
+                    else:
+                        with st.spinner("Checking your key..."):
+                            try:
+                                granola_request(granola_key_input, "/notes", {"page_size": 1})
+                            except GranolaAPIError as e:
+                                st.error(str(e))
+                            else:
+                                st.session_state["granola_connected"] = True
+                                st.session_state["granola_key"] = granola_key_input
+                                for k in ["granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
+                                    st.session_state.pop(k, None)
+                                st.rerun()
+
+        elif connected_rest:
+            st.markdown(_section_header_html("Connected via API key", "Your recent interviews", ""), unsafe_allow_html=True)
+            granola_key = st.session_state["granola_key"]
+
+            top_left, top_right = st.columns([4, 1])
+            with top_right:
+                if st.button("Disconnect", key="granola_key_disconnect"):
+                    for k in ["granola_connected", "granola_key", "granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
+                        st.session_state.pop(k, None)
+                    st.rerun()
+
+            if "granola_folders" not in st.session_state:
+                try:
+                    st.session_state["granola_folders"] = granola_list_all_folders(granola_key)
+                except GranolaAPIError as e:
+                    st.session_state["granola_folders"] = []
+                    st.warning(f"Couldn't load folders: {e}")
+
+            folder_options = {"All folders": None}
+            for f in st.session_state["granola_folders"]:
+                folder_options[f["name"]] = f["id"]
+            with top_left:
+                folder_label = st.selectbox("Folder", list(folder_options.keys()))
+            selected_folder_id = folder_options[folder_label]
+
+            if "granola_notes" not in st.session_state or st.session_state.get("granola_folder_id") != selected_folder_id:
+                try:
+                    notes, has_more, cursor = granola_list_notes(granola_key, folder_id=selected_folder_id, page_size=20)
+                except GranolaAPIError as e:
+                    st.error(str(e))
+                    notes, has_more, cursor = [], False, None
+                st.session_state["granola_notes"] = notes
+                st.session_state["granola_has_more"] = has_more
+                st.session_state["granola_cursor"] = cursor
+                st.session_state["granola_folder_id"] = selected_folder_id
+
+            search = st.text_input("Filter loaded interviews by title", placeholder="Search...")
+            notes = st.session_state["granola_notes"]
+            if search:
+                notes = [n for n in notes if search.lower() in (n.get("title") or "").lower()]
+
+            if not notes:
+                st.info("No interviews found. Only meetings with a generated Granola summary appear here.")
+
+            for note in notes:
+                title = note.get("title") or "Untitled interview"
+                created = (note.get("created_at") or "")[:10]
+                owner = (note.get("owner") or {}).get("name") or (note.get("owner") or {}).get("email") or ""
+                row = st.columns([5, 2, 2, 1])
+                row[0].markdown(f"**{title}**")
+                row[1].caption(created)
+                row[2].caption(owner)
+                if row[3].button("Select", key=f"select_{note['id']}"):
+                    with st.spinner("Fetching interview details..."):
+                        try:
+                            st.session_state["granola_selected_note"] = granola_get_note(granola_key, note["id"])
+                        except GranolaAPIError as e:
+                            st.error(str(e))
+                        else:
+                            st.session_state["view"] = "review"
+                            st.rerun()
+
+            if st.session_state.get("granola_has_more"):
+                if st.button("Load more interviews"):
+                    try:
+                        more_notes, has_more, cursor = granola_list_notes(
+                            granola_key, folder_id=selected_folder_id, cursor=st.session_state["granola_cursor"], page_size=20
+                        )
+                        st.session_state["granola_notes"] = st.session_state["granola_notes"] + more_notes
+                        st.session_state["granola_has_more"] = has_more
+                        st.session_state["granola_cursor"] = cursor
+                        st.rerun()
+                    except GranolaAPIError as e:
+                        st.error(str(e))
+
+        elif connected_mcp:
+            st.markdown(_section_header_html("Connected via MCP", "Your recent calls", ""), unsafe_allow_html=True)
+
+            MCP_SESSION_KEYS = [
+                "granola_mcp_tools", "granola_mcp_tool_schemas", "granola_mcp_tokens", "granola_mcp_client_info",
+                "granola_mcp_last_result", "granola_mcp_meetings", "granola_mcp_meetings_found", "granola_mcp_meetings_error",
+                "granola_mcp_selected_meeting", "mcp_pulled_summary", "mcp_pulled_transcript",
+            ]
+
+            tool_names = st.session_state["granola_mcp_tools"]
+            tool_schemas = st.session_state.get("granola_mcp_tool_schemas", {})
+
+            top_left, top_right = st.columns([4, 1])
+            with top_left:
+                st.caption(f"{len(tool_names)} tools available.")
+            with top_right:
+                if st.button("Disconnect", key="granola_mcp_disconnect"):
+                    for k in MCP_SESSION_KEYS:
+                        st.session_state.pop(k, None)
+                    st.rerun()
+
+            # Auto-load the call list once per connection - this is what makes MCP feel like
+            # "one connected experience" instead of a manual tool console the user has to drive.
+            if "list_meetings" in tool_names and "granola_mcp_meetings" not in st.session_state:
+                with st.spinner("Loading your recent calls..."):
+                    try:
+                        result = granola_mcp_call_tool("list_meetings", {})
+                    except GranolaAPIError as e:
+                        st.session_state["granola_mcp_meetings_error"] = str(e)
+                        st.session_state["granola_mcp_meetings"] = []
+                        st.session_state["granola_mcp_meetings_found"] = False
+                    else:
+                        if result["is_error"]:
+                            st.session_state["granola_mcp_meetings_error"] = result["text"] or "list_meetings returned an error."
+                            st.session_state["granola_mcp_meetings"] = []
+                            st.session_state["granola_mcp_meetings_found"] = False
+                        else:
+                            meetings = _find_meeting_list(result)
+                            st.session_state["granola_mcp_meetings"] = meetings or []
+                            st.session_state["granola_mcp_meetings_found"] = meetings is not None
+
+            meetings_found = st.session_state.get("granola_mcp_meetings_found", False)
+
+            if meetings_found:
+                meetings = st.session_state.get("granola_mcp_meetings", [])
+                list_top_left, list_top_right = st.columns([4, 1])
+                with list_top_left:
+                    search = st.text_input("Filter your calls by title", placeholder="Search...", key="mcp_meeting_search")
+                with list_top_right:
+                    st.write("")
+                    if st.button("🔄 Refresh", key="mcp_refresh_meetings"):
+                        for k in ["granola_mcp_meetings", "granola_mcp_meetings_found", "granola_mcp_meetings_error"]:
+                            st.session_state.pop(k, None)
+                        st.rerun()
+
+                visible = [m for m in meetings if search.lower() in _meeting_title(m).lower()] if search else meetings
+                if not meetings:
+                    st.info("No calls found via MCP yet.")
+                elif not visible:
+                    st.info("No calls match your search.")
+                for m in visible:
+                    mid = _meeting_id(m)
+                    row = st.columns([6, 2, 1])
+                    row[0].markdown(f"**{_meeting_title(m)}**")
+                    row[1].caption(_meeting_date(m))
+                    if row[2].button("Select", key=f"mcp_select_{mid}"):
+                        id_arg = _tool_id_arg_name(tool_schemas.get("get_meeting_transcript", {}))
+                        with st.spinner("Fetching transcript..."):
+                            try:
+                                t_result = granola_mcp_call_tool("get_meeting_transcript", {id_arg: mid})
+                            except GranolaAPIError as e:
+                                st.error(str(e))
+                            else:
+                                if t_result["is_error"]:
+                                    st.error(t_result["text"] or "Couldn't fetch the transcript for this call.")
+                                else:
+                                    st.session_state["granola_mcp_selected_meeting"] = m
+                                    st.session_state["mcp_pulled_summary"] = _meeting_summary(m)
+                                    st.session_state["mcp_pulled_transcript"] = t_result.get("text") or ""
+                                    st.session_state["view"] = "review"
+                                    st.rerun()
+
+                with st.expander("Advanced: raw tool console"):
+                    _render_mcp_raw_console(tool_names, tool_schemas)
+            else:
+                if st.session_state.get("granola_mcp_meetings_error"):
+                    st.warning(f"Couldn't load your call list: {st.session_state['granola_mcp_meetings_error']}")
+                else:
+                    st.info(
+                        "Couldn't build a browsable call list from this server's response - Granola hasn't "
+                        "published exact MCP output schemas for third-party clients, so this falls back to the "
+                        "raw tool console below rather than guessing at a shape that might be wrong."
+                    )
+                _render_mcp_raw_console(tool_names, tool_schemas)
 
 with tab_log:
     log_content = read_log()
