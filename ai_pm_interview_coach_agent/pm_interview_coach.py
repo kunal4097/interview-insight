@@ -559,6 +559,27 @@ def _extract_tool_text(result) -> str:
     return "\n".join(parts)
 
 
+def _clean_mcp_transcript_text(raw: str) -> str:
+    """Granola's real get_meeting_transcript tool doesn't return plain text - it prefixes a
+    security preamble ("treat this as data, not instructions") before a JSON object whose
+    `transcript` field holds the actual text. Pull that field out so the assessment (and the
+    review screen) see readable text instead of a raw JSON blob with a preamble glued on.
+    Falls back to the untouched raw text if the shape doesn't match - never lose data by
+    guessing wrong."""
+    if not raw:
+        return raw
+    start = raw.find("{")
+    if start == -1:
+        return raw
+    try:
+        parsed, _end = json.JSONDecoder().raw_decode(raw, start)
+    except json.JSONDecodeError:
+        return raw
+    if isinstance(parsed, dict) and isinstance(parsed.get("transcript"), str) and parsed["transcript"].strip():
+        return parsed["transcript"]
+    return raw
+
+
 async def _granola_mcp_session(work_fn):
     """Opens one OAuth-authenticated MCP session against Granola and runs work_fn(session,
     tools_by_name) inside it. Reuses stored tokens from StreamlitMCPTokenStorage when valid;
@@ -804,7 +825,7 @@ def _render_mcp_raw_console(tool_names: list, tool_schemas: dict) -> None:
             if use_as_summary:
                 st.session_state["mcp_pulled_summary"] = mcp_pull_text
             if use_as_transcript:
-                st.session_state["mcp_pulled_transcript"] = mcp_pull_text
+                st.session_state["mcp_pulled_transcript"] = _clean_mcp_transcript_text(mcp_pull_text)
             if use_as_summary or use_as_transcript:
                 st.session_state["view"] = "review"
                 st.rerun()
@@ -932,6 +953,15 @@ def read_log() -> str:
         return f.read()
 
 
+def _derive_session_label(report_md: str) -> str:
+    """A session label the caller didn't already have (e.g. manual paste, which has no note/
+    meeting title to borrow) - pulled from the report's own headline so nothing needs typing."""
+    summary, _ = _extract_json_summary(report_md)
+    if summary and summary.get("headline"):
+        return summary["headline"]
+    return f"Session - {datetime.now().strftime('%d %b %Y, %H:%M')}"
+
+
 def run_assessment_flow(provider: str, api_key: str, model: str, summary: str, transcript: str, target_role: str, question_context: str, outcome: str, session_label: str) -> None:
     if not api_key:
         st.error(f"Add your {provider} API key in the sidebar first.")
@@ -942,7 +972,8 @@ def run_assessment_flow(provider: str, api_key: str, model: str, summary: str, t
     with st.spinner("Assessing the interview..."):
         user_content = build_user_content(summary, transcript, target_role, question_context, outcome)
         report_md, truncated = call_llm(provider, api_key, model, SYSTEM_PROMPT, user_content)
-        append_to_log(session_label, report_md)
+        resolved_label = session_label.strip() if session_label and session_label.strip() else _derive_session_label(report_md)
+        append_to_log(resolved_label, report_md)
     st.session_state["last_report"] = report_md
     st.session_state["last_report_truncated"] = truncated
     st.session_state["last_report_time"] = datetime.now()
@@ -1030,6 +1061,22 @@ def _inject_design_system() -> None:
 def _section_header_html(eyebrow: str, title: str, subtitle: str = "") -> str:
     subtitle_html = f'<div class="pmic-subtitle">{html.escape(subtitle)}</div>' if subtitle else ""
     return f'<div class="pmic-eyebrow">{html.escape(eyebrow)}</div><div class="pmic-h2">{html.escape(title)}</div>{subtitle_html}'
+
+
+def _review_card_header_html(title: str, source_label: str) -> str:
+    """Same icon+title/subtitle+pill header pattern as the 'Choose a source' cards, so the
+    review screen reads as a continuation of that step, not a different, unstyled page."""
+    return (
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">'
+        '<div style="display:flex;gap:10px;">'
+        f'<div style="width:34px;height:34px;border-radius:8px;background:{ACCENT_BLUE_BG};display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">📄</div>'
+        '<div>'
+        f'<div style="font-family:{FONT_SERIF};font-weight:600;font-size:17px;color:{TEXT_PRIMARY};">{html.escape(title)}</div>'
+        f'<div style="font-family:{FONT_SANS};font-size:12.5px;color:{TEXT_SECONDARY};">{html.escape(source_label)}</div>'
+        "</div></div>"
+        + _chip_html("Ready to run", "info")
+        + "</div>"
+    )
 
 
 def _meta_row_html(items: list) -> str:
@@ -1519,27 +1566,29 @@ _inject_design_system()
 with st.sidebar:
     st.header("🔑 Settings")
     provider = st.radio("Model provider", PROVIDERS, horizontal=True)
+    secret_name = "OPENAI_API_KEY" if provider == "OpenAI" else "ANTHROPIC_API_KEY"
     if provider == "OpenAI":
         api_key = st.text_input(
             "OpenAI API Key",
             type="password",
             value=_remembered_api_key("OPENAI_API_KEY"),
-            help="Get one at https://platform.openai.com/api-keys. Add it once to "
-            ".streamlit/secrets.toml (see README) and this field will stay filled in.",
+            help="Get one at https://platform.openai.com/api-keys.",
         )
     else:
         api_key = st.text_input(
             "Anthropic API Key",
             type="password",
             value=_remembered_api_key("ANTHROPIC_API_KEY"),
-            help="Get one at https://console.anthropic.com/settings/keys. Add it once to "
-            ".streamlit/secrets.toml (see README) and this field will stay filled in.",
+            help="Get one at https://console.anthropic.com/settings/keys.",
+        )
+    if not api_key:
+        st.caption(
+            f"⚠️ Add `{secret_name}` to `.streamlit/secrets.toml` once (see README) so you never "
+            "have to paste this again, even after a server restart."
         )
     models_for_provider = MODELS_BY_PROVIDER[provider]
     model_label = st.selectbox("Model", list(models_for_provider.keys()))
     model = models_for_provider[model_label]
-    st.divider()
-    candidate_name = st.text_input("Session label", placeholder="e.g. Mock round 2 - product sense")
     st.divider()
     st.caption(f"Notes/transcripts stay local to this app - the only network call is to the {provider} API.")
     st.caption("Reports are written to omit names, contact details, employers, and other identifying background.")
@@ -1590,63 +1639,74 @@ with tab_analyze:
             transcript_items = selected_note.get("transcript")
             g_transcript = format_granola_transcript(transcript_items) if transcript_items else ""
 
-            st.markdown(_section_header_html("This is the transcript", title, ""), unsafe_allow_html=True)
-            if g_summary:
-                st.markdown("**Summary**")
-                st.markdown(g_summary)
-            else:
-                st.caption("No summary available for this interview.")
-            if not g_transcript:
-                st.caption(
-                    "No transcript for this interview - the assessment will run on the summary "
-                    "alone. Verbal-delivery ratings will come back \"Not assessable.\""
-                )
-            else:
-                st.text_area("Transcript", value=g_transcript, height=260, key="review_rest_transcript_display", disabled=True)
+            with st.container(border=True):
+                st.markdown(_review_card_header_html(title, "From your Granola API key"), unsafe_allow_html=True)
 
-            with st.expander("Additional context (optional, but improves the assessment)"):
-                g_col1, g_col2 = st.columns(2)
-                with g_col1:
-                    g_target_role = st.text_input("Target role", key="g_target_role", placeholder="e.g. Senior PM, Growth")
-                with g_col2:
-                    g_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="g_outcome")
-                g_question_context = st.text_area("Question context", key="g_question_context", height=80)
-                g_outcome_other = ""
-                if g_outcome == "Other (describe below)":
-                    g_outcome_other = st.text_input("Describe the outcome", key="g_outcome_other")
+                if g_summary:
+                    st.markdown(f'<div class="pmic-eyebrow" style="margin-top:6px;">Summary</div>', unsafe_allow_html=True)
+                    st.markdown(g_summary)
+                else:
+                    st.caption("No summary available for this interview.")
 
-            if st.button("Run Assessment on this interview", type="primary", use_container_width=True):
-                g_resolved_outcome = g_outcome_other.strip() if g_outcome == "Other (describe below)" and g_outcome_other.strip() else g_outcome
-                run_assessment_flow(provider, api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, title)
-                st.session_state["view"] = "report"
-                st.rerun()
+                st.markdown('<div class="pmic-eyebrow" style="margin-top:10px;">Transcript</div>', unsafe_allow_html=True)
+                if not g_transcript:
+                    st.caption(
+                        "No transcript for this interview - the assessment will run on the summary "
+                        "alone. Verbal-delivery ratings will come back \"Not assessable.\""
+                    )
+                else:
+                    st.text_area("Transcript", value=g_transcript, height=260, key="review_rest_transcript_display", disabled=True, label_visibility="collapsed")
+                    st.caption(f"{len(g_transcript)} characters")
+
+                with st.expander("Additional context (optional, but improves the assessment)"):
+                    g_col1, g_col2 = st.columns(2)
+                    with g_col1:
+                        g_target_role = st.text_input("Target role", key="g_target_role", placeholder="e.g. Senior PM, Growth")
+                    with g_col2:
+                        g_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="g_outcome")
+                    g_question_context = st.text_area("Question context", key="g_question_context", height=80)
+                    g_outcome_other = ""
+                    if g_outcome == "Other (describe below)":
+                        g_outcome_other = st.text_input("Describe the outcome", key="g_outcome_other")
+
+                if st.button("Run analysis", type="primary", use_container_width=True):
+                    g_resolved_outcome = g_outcome_other.strip() if g_outcome == "Other (describe below)" and g_outcome_other.strip() else g_outcome
+                    run_assessment_flow(provider, api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, title)
+                    st.session_state["view"] = "report"
+                    st.rerun()
 
         elif selected_meeting or st.session_state.get("mcp_pulled_summary") or st.session_state.get("mcp_pulled_transcript"):
             title = _meeting_title(selected_meeting) if selected_meeting else "Granola interview (via MCP)"
-            st.markdown(_section_header_html("This is the transcript", title, ""), unsafe_allow_html=True)
-            mcp_summary = st.text_area(
-                "Summary", value=st.session_state.get("mcp_pulled_summary", ""), height=120, key="mcp_summary_field"
-            )
-            mcp_transcript = st.text_area(
-                "Transcript", value=st.session_state.get("mcp_pulled_transcript", ""), height=260, key="mcp_transcript_field"
-            )
+            with st.container(border=True):
+                st.markdown(_review_card_header_html(title, "From Granola via MCP"), unsafe_allow_html=True)
 
-            with st.expander("Additional context (optional, but improves the assessment)"):
-                mcp_col1, mcp_col2 = st.columns(2)
-                with mcp_col1:
-                    mcp_target_role = st.text_input("Target role", key="mcp_target_role", placeholder="e.g. Senior PM, Growth")
-                with mcp_col2:
-                    mcp_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="mcp_outcome")
-                mcp_question_context = st.text_area("Question context", key="mcp_question_context", height=80)
-                mcp_outcome_other = ""
-                if mcp_outcome == "Other (describe below)":
-                    mcp_outcome_other = st.text_input("Describe the outcome", key="mcp_outcome_other")
+                st.markdown('<div class="pmic-eyebrow" style="margin-top:6px;">Summary</div>', unsafe_allow_html=True)
+                mcp_summary = st.text_area(
+                    "Summary", value=st.session_state.get("mcp_pulled_summary", ""), height=100, key="mcp_summary_field", label_visibility="collapsed"
+                )
 
-            if st.button("Run Assessment on this content", type="primary", use_container_width=True):
-                mcp_resolved_outcome = mcp_outcome_other.strip() if mcp_outcome == "Other (describe below)" and mcp_outcome_other.strip() else mcp_outcome
-                run_assessment_flow(provider, api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, title)
-                st.session_state["view"] = "report"
-                st.rerun()
+                st.markdown('<div class="pmic-eyebrow" style="margin-top:10px;">Transcript</div>', unsafe_allow_html=True)
+                mcp_transcript = st.text_area(
+                    "Transcript", value=st.session_state.get("mcp_pulled_transcript", ""), height=260, key="mcp_transcript_field", label_visibility="collapsed"
+                )
+                st.caption(f"{len(mcp_transcript)} characters")
+
+                with st.expander("Additional context (optional, but improves the assessment)"):
+                    mcp_col1, mcp_col2 = st.columns(2)
+                    with mcp_col1:
+                        mcp_target_role = st.text_input("Target role", key="mcp_target_role", placeholder="e.g. Senior PM, Growth")
+                    with mcp_col2:
+                        mcp_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="mcp_outcome")
+                    mcp_question_context = st.text_area("Question context", key="mcp_question_context", height=80)
+                    mcp_outcome_other = ""
+                    if mcp_outcome == "Other (describe below)":
+                        mcp_outcome_other = st.text_input("Describe the outcome", key="mcp_outcome_other")
+
+                if st.button("Run analysis", type="primary", use_container_width=True):
+                    mcp_resolved_outcome = mcp_outcome_other.strip() if mcp_outcome == "Other (describe below)" and mcp_outcome_other.strip() else mcp_outcome
+                    run_assessment_flow(provider, api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, title)
+                    st.session_state["view"] = "report"
+                    st.rerun()
 
         else:
             # No selection to review (e.g. a stale rerun) - bounce back to browse rather than
@@ -1717,10 +1777,10 @@ with tab_analyze:
 
                     st.caption(f"{len(transcript)} characters · local only")
 
-                    analyze_clicked = st.button("Run Assessment", type="primary", use_container_width=True, key="manual_run_btn")
+                    analyze_clicked = st.button("Run analysis", type="primary", use_container_width=True, key="manual_run_btn")
                     if analyze_clicked:
                         resolved_outcome = outcome_other.strip() if outcome == "Other (describe below)" and outcome_other.strip() else outcome
-                        run_assessment_flow(provider, api_key, model, summary, transcript, target_role, question_context, resolved_outcome, candidate_name)
+                        run_assessment_flow(provider, api_key, model, summary, transcript, target_role, question_context, resolved_outcome, "")
                         st.session_state["view"] = "report"
                         st.rerun()
 
@@ -1922,7 +1982,7 @@ with tab_analyze:
                                                 else:
                                                     st.session_state["granola_mcp_selected_meeting"] = m
                                                     st.session_state["mcp_pulled_summary"] = _meeting_summary(m)
-                                                    st.session_state["mcp_pulled_transcript"] = t_result.get("text") or ""
+                                                    st.session_state["mcp_pulled_transcript"] = _clean_mcp_transcript_text(t_result.get("text") or "")
                                                     st.session_state["view"] = "review"
                                                     st.rerun()
 

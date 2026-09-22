@@ -131,7 +131,7 @@ switching views.
 **Add a transcript manually** (left card)
 
 Paste or upload the **transcript**, optionally open **Additional context** for the summary/target \
-role/question context/outcome, then click **Run Assessment**.
+role/question context/outcome, then click **Run analysis**.
 
 **Or connect Granola** (right card) — pick whichever you have:
 
@@ -148,10 +148,10 @@ instead — pick a tool, check its real input schema, call it, and pull the resu
 (`grn_...` — generate one in the Granola desktop app under Settings → API access) and click \
 **Connect**. Browse by folder, search loaded titles, and click **Select** on one.
 
-**Then, either way:** clicking **Select** takes you to a dedicated review screen — "This is the \
-transcript" — showing exactly what will be assessed (and the summary, when the call carries one), \
-with **← Back to calls** to pick a different one instead. Add optional context if you like, click \
-**Run Assessment**, and you land on a dedicated report screen: a debrief header, the \
+**Then, either way:** clicking **Select** takes you to a dedicated review screen — styled like the \
+manual-transcript card — showing exactly what will be assessed (and the summary, when the call \
+carries one), with **← Back to calls** to pick a different one instead. Add optional context if \
+you like, click **Run analysis**, and you land on a dedicated report screen: a debrief header, the \
 five-dimension rating rubric, conversation signals measured from the transcript, how the answers \
 landed, a question-by-question breakdown, an improved-answer rewrite, a practice plan, and the top \
 issues found. Download it as markdown, or click **← Start a new assessment** to go back to the \
