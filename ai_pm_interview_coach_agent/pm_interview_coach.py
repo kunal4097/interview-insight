@@ -668,17 +668,47 @@ def _meeting_title(item: dict) -> str:
 
 
 def _meeting_date(item: dict) -> str:
-    return _pick_field(item, _MEETING_DATE_KEYS)[:10]
+    date = _pick_field(item, _MEETING_DATE_KEYS)
+    if not date:
+        return ""
+    if re.match(r"^\d{4}-\d{2}-\d{2}", date):
+        return date[:10]
+    # Granola's real MCP server returns human-readable dates like
+    # "Sep 22, 2026 10:53 AM GMT+5:30" - trim the timezone suffix rather than blindly
+    # slicing to 10 chars (which would chop an ISO-style date mid-string here).
+    return re.sub(r"\s*GMT[+-]\d{1,2}(:\d{2})?$", "", date).strip()
 
 
 def _meeting_summary(item: dict) -> str:
     return _pick_field(item, _MEETING_SUMMARY_KEYS)
 
 
+_MEETING_TAG_RE = re.compile(r"<meeting\b([^>]*)>", re.IGNORECASE)
+_TAG_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+
+
+def _unescape_xml(s: str) -> str:
+    return s.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replace("&quot;", '"').replace("&#39;", "'")
+
+
+def _parse_meeting_tags(text: str) -> list:
+    """Granola's real MCP server returns list_meetings as a custom tag format, e.g.
+    <meetings_data ...><meeting id="..." title="..." date="..." url="..."/>...</meetings_data> -
+    not JSON. Reads attributes straight off each <meeting> opening tag only (never the tag
+    body, which can carry participant names/emails - out of scope for a meeting-list card and
+    exactly the kind of personal detail this app is built to never surface)."""
+    meetings = []
+    for tag_match in _MEETING_TAG_RE.finditer(text):
+        attrs = {k: _unescape_xml(v) for k, v in _TAG_ATTR_RE.findall(tag_match.group(1))}
+        if attrs.get("id"):
+            meetings.append(attrs)
+    return meetings
+
+
 def _find_meeting_list(result: dict) -> list | None:
     """Locates a list of meeting-like dicts inside an MCP tool result. Returns None when
-    nothing list-shaped can be found (including invalid/non-JSON text) - a found empty list
-    ([], "you have no calls yet") is distinct from "couldn't parse this at all"."""
+    nothing list-shaped can be found. A found empty list ([], "you have no calls yet") is
+    distinct from "couldn't parse this at all"."""
 
     def is_dict_list(value) -> bool:
         return isinstance(value, list) and (not value or all(isinstance(v, dict) for v in value))
@@ -701,8 +731,15 @@ def _find_meeting_list(result: dict) -> list | None:
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError:
-            return None
-        return search(parsed)
+            parsed = None
+        if parsed is not None:
+            found = search(parsed)
+            if found is not None:
+                return found
+    if "<meeting" in text:
+        tag_meetings = _parse_meeting_tags(text)
+        if tag_meetings:
+            return tag_meetings
     return None
 
 
