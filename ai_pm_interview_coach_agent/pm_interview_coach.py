@@ -1125,6 +1125,13 @@ def _inject_design_system() -> None:
         <style>
         .stApp {{ background: {PAGE_BG}; }}
         [data-testid="stAppViewContainer"] {{ background: {PAGE_BG}; }}
+        /* The sidebar (Settings) and the main panel were the same near-identical gray with no
+           boundary between them - give the sidebar a clearly distinct white surface and a
+           hairline divider so the two panels read as separate regions. */
+        [data-testid="stSidebar"] {{
+            background: {CARD_BG} !important;
+            border-right: 1px solid #d7dce5;
+        }}
         .pmic-eyebrow {{
             font-family: {FONT_SANS}; font-size: 12px; font-weight: 700;
             letter-spacing: 0.09em; text-transform: uppercase; color: {ACCENT_BLUE};
@@ -1152,6 +1159,20 @@ def _inject_design_system() -> None:
         [data-testid="stTextArea"] textarea:focus, [data-testid="stTextInput"] input:focus {{
             border-color: {ACCENT_BLUE} !important;
             box-shadow: 0 0 0 1px {ACCENT_BLUE} !important;
+        }}
+        /* Belt-and-suspenders on top of config.toml's primaryColor: a browser tab open across
+           a server restart can keep showing Streamlit's default red for primary buttons until
+           a full page reload, not just a rerun. Target every selector Streamlit has used for
+           primary buttons across versions so this never depends on cache timing. */
+        .stButton button[kind="primary"], .stButton button[kind="primaryFormSubmit"],
+        [data-testid="stBaseButton-primary"], [data-testid="baseButton-primary"] {{
+            background-color: {ACCENT_BLUE} !important;
+            border-color: {ACCENT_BLUE} !important;
+            color: #ffffff !important;
+        }}
+        .stButton button[kind="primary"]:hover, [data-testid="stBaseButton-primary"]:hover, [data-testid="baseButton-primary"]:hover {{
+            background-color: {TEXT_PRIMARY} !important;
+            border-color: {TEXT_PRIMARY} !important;
         }}
         </style>
         """,
