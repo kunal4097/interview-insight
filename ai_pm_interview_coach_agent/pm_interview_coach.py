@@ -641,6 +641,135 @@ def granola_mcp_call_tool(tool_name: str, arguments: dict) -> dict:
     return asyncio.run(_granola_mcp_session(work))
 
 
+# Granola hasn't published exact MCP output schemas for third-party clients (see the note in
+# README), so these are deliberately defensive: they try several plausible shapes/key names and
+# return None/"" rather than a guessed-wrong value when nothing recognizable is found - callers
+# fall back to the raw tool console in that case instead of showing something silently wrong.
+_MEETING_ID_KEYS = ["id", "meeting_id", "meetingId", "uuid", "note_id", "noteId"]
+_MEETING_TITLE_KEYS = ["title", "name", "subject", "meeting_title", "meetingTitle"]
+_MEETING_DATE_KEYS = ["date", "created_at", "createdAt", "start_time", "startTime", "scheduled_at", "scheduledAt"]
+_MEETING_SUMMARY_KEYS = ["summary", "summary_text", "summary_markdown", "notes", "overview", "description"]
+
+
+def _pick_field(item: dict, keys: list) -> str:
+    for k in keys:
+        v = item.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _meeting_id(item: dict) -> str:
+    return _pick_field(item, _MEETING_ID_KEYS)
+
+
+def _meeting_title(item: dict) -> str:
+    return _pick_field(item, _MEETING_TITLE_KEYS) or "Untitled interview"
+
+
+def _meeting_date(item: dict) -> str:
+    return _pick_field(item, _MEETING_DATE_KEYS)[:10]
+
+
+def _meeting_summary(item: dict) -> str:
+    return _pick_field(item, _MEETING_SUMMARY_KEYS)
+
+
+def _find_meeting_list(result: dict) -> list | None:
+    """Locates a list of meeting-like dicts inside an MCP tool result. Returns None when
+    nothing list-shaped can be found (including invalid/non-JSON text) - a found empty list
+    ([], "you have no calls yet") is distinct from "couldn't parse this at all"."""
+
+    def is_dict_list(value) -> bool:
+        return isinstance(value, list) and (not value or all(isinstance(v, dict) for v in value))
+
+    def search(value):
+        if is_dict_list(value):
+            return [v for v in value if _meeting_id(v)] if value else value
+        if isinstance(value, dict):
+            for key in ("meetings", "items", "notes", "results", "data"):
+                found = value.get(key)
+                if is_dict_list(found):
+                    return [v for v in found if _meeting_id(v)] if found else found
+        return None
+
+    found = search(result.get("structured"))
+    if found is not None:
+        return found
+    text = (result.get("text") or "").strip()
+    if text.startswith("{") or text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        return search(parsed)
+    return None
+
+
+def _tool_id_arg_name(schema: dict, fallback: str = "meeting_id") -> str:
+    required = (schema or {}).get("required") or []
+    if required:
+        return required[0]
+    props = (schema or {}).get("properties") or {}
+    return next(iter(props), fallback)
+
+
+def _render_mcp_raw_console(tool_names: list, tool_schemas: dict) -> None:
+    """Manual fallback for when the browse-and-select flow can't find a recognizable call
+    list (or for power users who want to call a different tool directly) - call any tool by
+    name, see its real input schema, and pull the raw result into the assessment yourself."""
+    st.subheader("Call a tool")
+    tool_name = st.selectbox("Tool", tool_names, key="mcp_tool_name")
+    st.caption("Input schema (from Granola's MCP server, not guessed):")
+    st.json(tool_schemas.get(tool_name, {}))
+    args_json = st.text_area(
+        "Arguments (JSON)",
+        value="{}",
+        height=100,
+        help="Match property names from the schema above. Most list/read tools accept {} for defaults.",
+    )
+    if st.button("Call tool", type="primary"):
+        try:
+            arguments = json.loads(args_json) if args_json.strip() else {}
+        except json.JSONDecodeError as e:
+            st.error(f"Arguments aren't valid JSON: {e}")
+        else:
+            with st.spinner(f"Calling {tool_name}..."):
+                try:
+                    result = granola_mcp_call_tool(tool_name, arguments)
+                except GranolaAPIError as e:
+                    st.error(str(e))
+                else:
+                    st.session_state["granola_mcp_last_result"] = result
+
+    last_result = st.session_state.get("granola_mcp_last_result")
+    if last_result:
+        st.divider()
+        if last_result["is_error"]:
+            st.error(last_result["text"] or "The tool call returned an error.")
+        else:
+            if last_result["structured"] is not None:
+                st.markdown("**Structured result**")
+                st.json(last_result["structured"])
+            if last_result["text"]:
+                st.markdown("**Text result**")
+                st.text_area("Raw text", value=last_result["text"], height=200, key="mcp_raw_text_display")
+
+        mcp_pull_text = last_result.get("text") or ""
+        if mcp_pull_text:
+            pull_col1, pull_col2 = st.columns(2)
+            with pull_col1:
+                use_as_summary = st.button("Use as summary for assessment", use_container_width=True)
+            with pull_col2:
+                use_as_transcript = st.button("Use as transcript for assessment", use_container_width=True)
+            if use_as_summary or use_as_transcript:
+                st.session_state.pop("granola_mcp_selected_meeting", None)
+            if use_as_summary:
+                st.session_state["mcp_pulled_summary"] = mcp_pull_text
+            if use_as_transcript:
+                st.session_state["mcp_pulled_transcript"] = mcp_pull_text
+
+
 # --- Conversation signals (deterministic, computed from the raw transcript text) ------------
 # Fillers, speaking share, and longest answer are counted directly, not estimated by the model -
 # an LLM guessing at these from plain text would produce fabricated-looking precision, which is
@@ -1469,13 +1598,13 @@ with tab_granola:
                 render_last_report("granola")
 
     else:  # Sign in via MCP
-        st.caption(
-            "Works on any Granola plan, including Basic - no API key needed. Granola hasn't "
-            "published exact tool parameter schemas for third-party MCP clients, so this connects "
-            "and shows you the real tool list and their input schemas, rather than guessing at a "
-            "polished parsed view. Call a tool below and feed its raw output straight into the "
-            "assessment."
-        )
+        st.caption("Works on any Granola plan, including Basic - no API key needed. Browse your recent calls and pick one, the same way the API key flow works.")
+
+        MCP_SESSION_KEYS = [
+            "granola_mcp_tools", "granola_mcp_tool_schemas", "granola_mcp_tokens", "granola_mcp_client_info",
+            "granola_mcp_last_result", "granola_mcp_meetings", "granola_mcp_meetings_found", "granola_mcp_meetings_error",
+            "granola_mcp_selected_meeting", "mcp_pulled_summary", "mcp_pulled_transcript",
+        ]
 
         if not st.session_state.get("granola_mcp_tools"):
             if st.button("Sign in with Granola", type="primary"):
@@ -1496,62 +1625,87 @@ with tab_granola:
                 st.success(f"Connected via MCP. {len(tool_names)} tools available.")
             with top_right:
                 if st.button("Disconnect", key="granola_mcp_disconnect"):
-                    for k in ["granola_mcp_tools", "granola_mcp_tool_schemas", "granola_mcp_tokens", "granola_mcp_client_info", "granola_mcp_last_result"]:
+                    for k in MCP_SESSION_KEYS:
                         st.session_state.pop(k, None)
                     st.rerun()
 
-            st.subheader("Call a tool")
-            tool_name = st.selectbox("Tool", tool_names, key="mcp_tool_name")
-            st.caption("Input schema (from Granola's MCP server, not guessed):")
-            st.json(tool_schemas.get(tool_name, {}))
-            args_json = st.text_area(
-                "Arguments (JSON)",
-                value="{}",
-                height=100,
-                help="Match property names from the schema above. Most list/read tools accept {} for defaults.",
-            )
-            if st.button("Call tool", type="primary"):
-                try:
-                    arguments = json.loads(args_json) if args_json.strip() else {}
-                except json.JSONDecodeError as e:
-                    st.error(f"Arguments aren't valid JSON: {e}")
-                else:
-                    with st.spinner(f"Calling {tool_name}..."):
-                        try:
-                            result = granola_mcp_call_tool(tool_name, arguments)
-                        except GranolaAPIError as e:
-                            st.error(str(e))
+            # Auto-load the call list once per connection - this is what makes MCP feel like
+            # "one connected experience" instead of a manual tool console the user has to drive.
+            if "list_meetings" in tool_names and "granola_mcp_meetings" not in st.session_state:
+                with st.spinner("Loading your recent calls..."):
+                    try:
+                        result = granola_mcp_call_tool("list_meetings", {})
+                    except GranolaAPIError as e:
+                        st.session_state["granola_mcp_meetings_error"] = str(e)
+                        st.session_state["granola_mcp_meetings"] = []
+                        st.session_state["granola_mcp_meetings_found"] = False
+                    else:
+                        if result["is_error"]:
+                            st.session_state["granola_mcp_meetings_error"] = result["text"] or "list_meetings returned an error."
+                            st.session_state["granola_mcp_meetings"] = []
+                            st.session_state["granola_mcp_meetings_found"] = False
                         else:
-                            st.session_state["granola_mcp_last_result"] = result
+                            meetings = _find_meeting_list(result)
+                            st.session_state["granola_mcp_meetings"] = meetings or []
+                            st.session_state["granola_mcp_meetings_found"] = meetings is not None
 
-            last_result = st.session_state.get("granola_mcp_last_result")
-            if last_result:
-                st.divider()
-                if last_result["is_error"]:
-                    st.error(last_result["text"] or "The tool call returned an error.")
+            meetings_found = st.session_state.get("granola_mcp_meetings_found", False)
+
+            if meetings_found:
+                meetings = st.session_state.get("granola_mcp_meetings", [])
+                list_top_left, list_top_right = st.columns([4, 1])
+                with list_top_left:
+                    search = st.text_input("Filter your calls by title", placeholder="Search...", key="mcp_meeting_search")
+                with list_top_right:
+                    st.write("")
+                    if st.button("🔄 Refresh", key="mcp_refresh_meetings"):
+                        for k in ["granola_mcp_meetings", "granola_mcp_meetings_found", "granola_mcp_meetings_error"]:
+                            st.session_state.pop(k, None)
+                        st.rerun()
+
+                visible = [m for m in meetings if search.lower() in _meeting_title(m).lower()] if search else meetings
+                if not meetings:
+                    st.info("No calls found via MCP yet.")
+                elif not visible:
+                    st.info("No calls match your search.")
+                for m in visible:
+                    mid = _meeting_id(m)
+                    row = st.columns([6, 2, 1])
+                    row[0].markdown(f"**{_meeting_title(m)}**")
+                    row[1].caption(_meeting_date(m))
+                    if row[2].button("Select", key=f"mcp_select_{mid}"):
+                        id_arg = _tool_id_arg_name(tool_schemas.get("get_meeting_transcript", {}))
+                        with st.spinner("Fetching transcript..."):
+                            try:
+                                t_result = granola_mcp_call_tool("get_meeting_transcript", {id_arg: mid})
+                            except GranolaAPIError as e:
+                                st.error(str(e))
+                            else:
+                                if t_result["is_error"]:
+                                    st.error(t_result["text"] or "Couldn't fetch the transcript for this call.")
+                                else:
+                                    st.session_state["granola_mcp_selected_meeting"] = m
+                                    st.session_state["mcp_pulled_summary"] = _meeting_summary(m)
+                                    st.session_state["mcp_pulled_transcript"] = t_result.get("text") or ""
+                                    st.rerun()
+
+                with st.expander("Advanced: raw tool console"):
+                    _render_mcp_raw_console(tool_names, tool_schemas)
+            else:
+                if st.session_state.get("granola_mcp_meetings_error"):
+                    st.warning(f"Couldn't load your call list: {st.session_state['granola_mcp_meetings_error']}")
                 else:
-                    if last_result["structured"] is not None:
-                        st.markdown("**Structured result**")
-                        st.json(last_result["structured"])
-                    if last_result["text"]:
-                        st.markdown("**Text result**")
-                        st.text_area("Raw text", value=last_result["text"], height=200, key="mcp_raw_text_display")
+                    st.info(
+                        "Couldn't build a browsable call list from this server's response - Granola hasn't "
+                        "published exact MCP output schemas for third-party clients, so this falls back to the "
+                        "raw tool console below rather than guessing at a shape that might be wrong."
+                    )
+                _render_mcp_raw_console(tool_names, tool_schemas)
 
-                mcp_pull_text = last_result.get("text") or ""
-                if mcp_pull_text:
-                    pull_col1, pull_col2 = st.columns(2)
-                    with pull_col1:
-                        use_as_summary = st.button("Use as summary for assessment", use_container_width=True)
-                    with pull_col2:
-                        use_as_transcript = st.button("Use as transcript for assessment", use_container_width=True)
-                    if use_as_summary:
-                        st.session_state["mcp_pulled_summary"] = mcp_pull_text
-                    if use_as_transcript:
-                        st.session_state["mcp_pulled_transcript"] = mcp_pull_text
-
+            selected_meeting = st.session_state.get("granola_mcp_selected_meeting")
             if st.session_state.get("mcp_pulled_summary") or st.session_state.get("mcp_pulled_transcript"):
                 st.divider()
-                st.subheader("Run assessment on the pulled content")
+                st.subheader(_meeting_title(selected_meeting) if selected_meeting else "Run assessment on the pulled content")
                 mcp_summary = st.text_area(
                     "Summary", value=st.session_state.get("mcp_pulled_summary", ""), height=120, key="mcp_summary_field"
                 )
@@ -1571,7 +1725,8 @@ with tab_granola:
 
                 if st.button("Run Assessment on this content", type="primary", use_container_width=True):
                     mcp_resolved_outcome = mcp_outcome_other.strip() if mcp_outcome == "Other (describe below)" and mcp_outcome_other.strip() else mcp_outcome
-                    run_assessment_flow(provider, api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, "Granola interview (via MCP)")
+                    session_label = _meeting_title(selected_meeting) if selected_meeting else "Granola interview (via MCP)"
+                    run_assessment_flow(provider, api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, session_label)
 
                 render_last_report("granola_mcp")
 

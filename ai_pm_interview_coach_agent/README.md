@@ -47,13 +47,15 @@ omitted from every report.
 and Rating Dashboard, plus Major Issues, to a local `progress_log.md`; a one-click summary surfaces \
 what recurs across 2+ sessions, so you know what to actually fix before the next round.
 - 📥 **Exportable reports** — download any report or the full log as markdown.
-- 🔗 **Connect Granola directly** — a "Connect Granola" tab with two connection methods:
-  - **API key** (Business/Enterprise plan) — paste a key, browse recorded interviews by folder,
-    pick one, and its summary/transcript flow straight into the assessment.
+- 🔗 **Connect Granola directly** — a "Connect Granola" tab with two connection methods, both
+  landing on the same browse-and-select experience: pick a call, its summary/transcript flow
+  straight into the assessment.
+  - **API key** (Business/Enterprise plan) — paste a key, browse recorded interviews by folder.
   - **Sign in via MCP** (any plan, including free Basic) — the same browser OAuth flow Claude
-    Code/Claude.ai/ChatGPT use for Granola, no pasted key. See the note on this mode below — it's
-    a transparent tool console rather than a polished parsed view, since Granola hasn't published
-    exact MCP tool schemas for third-party clients.
+    Code/Claude.ai/ChatGPT use for Granola, no pasted key. Your recent calls load automatically
+    into the same kind of browsable list as the API key flow — select one and it fetches the
+    transcript for you. See the note below on the fallback path for when a server's response
+    can't be parsed into a call list.
 
 ## 🛠️ Tech Stack
 
@@ -144,10 +146,15 @@ this interview**.
 2. Switch the connection method to **Sign in via MCP** and click **Sign in with Granola**. Your \
 browser opens Granola's sign-in/approval page; approve access and return to the app (it's waiting \
 on a local callback, no copy-pasting a code or URL).
-3. Once connected, pick a tool (e.g. `list_meetings`), check its real input schema shown above the \
-arguments box, fill in `{}` or matching arguments, and click **Call tool**.
-4. Click **Use as summary** / **Use as transcript** on the result to pull it into the assessment \
-fields below, then **Run Assessment on this content**.
+3. Your recent calls load automatically into a browsable, searchable list — filter by title and \
+click **Select** on one. Its transcript (and summary, when the call list carries one) flow \
+straight into the assessment fields below.
+4. Add optional context, then click **Run Assessment on this content**.
+
+If Granola's response for a given account/server can't be parsed into a recognizable call list \
+(see the note below on why this can happen), the app falls back to a raw tool console instead — \
+pick a tool, check its real input schema, call it, and pull the result in manually with **Use as \
+summary** / **Use as transcript**.
 
 **Then, either way:**
 
@@ -186,12 +193,15 @@ your local `progress_log.md` — nothing leaves your machine besides the API cal
 doesn't support it at all. **The MCP sign-in (Option C) works on Basic too** — Granola's MCP server \
 is available on every plan, though transcript access there is still paid-plan-only, same as \
 elsewhere.
-- **The MCP mode is intentionally a raw tool console, not a polished parser.** Granola publishes \
-tool *names* for third-party MCP clients (`list_meetings`, `get_meetings`, `get_meeting_transcript`, \
-`query_granola_meetings`, `list_meeting_folders`, `get_account_info`) but not their exact input/ \
-output schemas. Rather than guess parameter names and risk silently-wrong calls, the app discovers \
-each tool's real schema at connect time and shows it to you before you call it — call a tool, read \
-the raw result, and pull it into the assessment yourself.
+- **The MCP browse-and-select view is a best-effort parse, with a raw console as its safety \
+net.** Granola publishes tool *names* for third-party MCP clients (`list_meetings`, `get_meetings`, \
+`get_meeting_transcript`, `query_granola_meetings`, `list_meeting_folders`, `get_account_info`) but \
+not their exact input/output schemas. The app calls `list_meetings` automatically and tries several \
+plausible response shapes and field names to build the call list you see — input *schemas* are \
+still discovered for real at connect time (never guessed), but the *output* shape for `list_meetings` \
+can't be known ahead of time the same way. If your account's server returns something the parser \
+doesn't recognize, the app says so and falls back to the raw tool console (call a tool, read the \
+raw result, pull it in yourself) rather than showing something silently wrong.
 - **MCP sign-in only works when you run this app locally.** It uses a loopback OAuth redirect \
 (`http://127.0.0.1:<port>/callback`) — the same native-app pattern `claude mcp add` uses — which \
 requires your browser and the app to be on the same machine. It won't work on a shared/hosted \
