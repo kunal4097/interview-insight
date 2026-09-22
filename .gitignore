@@ -5,6 +5,9 @@ __pycache__/
 .venv/
 venv/
 
+# Local API keys - never commit these
+**/.streamlit/secrets.toml
+
 # Personal interview content generated locally - don't publish transcripts/reports
 reports/*.md
 ai_pm_interview_coach_agent/progress_log.md

@@ -84,19 +84,35 @@ GPT-5.6 Sol). Same rubric and report either way — only the API call underneath
    streamlit run pm_interview_coach.py
    ```
 
-## 🔑 Environment Variables
+## 🔑 API Keys — set once, not every run
 
 Pick a provider in the sidebar, then provide that provider's API key there — Claude \
 ([console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)) or OpenAI \
-([platform.openai.com/api-keys](https://platform.openai.com/api-keys)). Alternatively, set the \
-matching env var before launching so the sidebar field pre-fills:
+([platform.openai.com/api-keys](https://platform.openai.com/api-keys)). You only need the key \
+for whichever provider you have selected. To avoid retyping it every time you restart the app \
+or open a new browser tab, use either of these (both are read automatically on every run):
+
+**Option A — `.streamlit/secrets.toml` (recommended)**
+
+Edit `ai_pm_interview_coach_agent/.streamlit/secrets.toml` (already created, gitignored — it \
+will never be committed) and fill in whichever key(s) you use:
+
+```toml
+ANTHROPIC_API_KEY = "sk-ant-..."
+OPENAI_API_KEY = "sk-..."
+```
+
+Restart the app once after saving, and the sidebar field stays pre-filled from then on.
+
+**Option B — environment variable**
 
 ```bash
 export ANTHROPIC_API_KEY=your_key_here   # for Claude
 export OPENAI_API_KEY=your_key_here      # for OpenAI
 ```
 
-You only need the key for whichever provider you have selected.
+Add this to your shell profile (`~/.zshrc`, etc.) to persist it across terminal sessions. If \
+both are set, `.streamlit/secrets.toml` takes precedence.
 
 ## 🧑‍💻 Usage
 

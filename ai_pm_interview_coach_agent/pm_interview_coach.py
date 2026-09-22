@@ -1233,6 +1233,18 @@ def render_last_report(key_suffix: str) -> None:
         )
 
 
+def _remembered_api_key(secret_name: str) -> str:
+    """Checks .streamlit/secrets.toml first (gitignored, survives restarts and new browser
+    tabs), then the env var - so a key only needs to be entered once, not on every run."""
+    try:
+        value = st.secrets.get(secret_name)
+        if value:
+            return value
+    except Exception:
+        pass
+    return os.environ.get(secret_name, "")
+
+
 st.set_page_config(page_title="AI PM Interview Coach", page_icon="🎯", layout="wide")
 
 with st.sidebar:
@@ -1242,15 +1254,17 @@ with st.sidebar:
         api_key = st.text_input(
             "OpenAI API Key",
             type="password",
-            value=os.environ.get("OPENAI_API_KEY", ""),
-            help="Get one at https://platform.openai.com/api-keys",
+            value=_remembered_api_key("OPENAI_API_KEY"),
+            help="Get one at https://platform.openai.com/api-keys. Add it once to "
+            ".streamlit/secrets.toml (see README) and this field will stay filled in.",
         )
     else:
         api_key = st.text_input(
             "Anthropic API Key",
             type="password",
-            value=os.environ.get("ANTHROPIC_API_KEY", ""),
-            help="Get one at https://console.anthropic.com/settings/keys",
+            value=_remembered_api_key("ANTHROPIC_API_KEY"),
+            help="Get one at https://console.anthropic.com/settings/keys. Add it once to "
+            ".streamlit/secrets.toml (see README) and this field will stay filled in.",
         )
     models_for_provider = MODELS_BY_PROVIDER[provider]
     model_label = st.selectbox("Model", list(models_for_provider.keys()))
