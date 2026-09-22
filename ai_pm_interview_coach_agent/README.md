@@ -48,9 +48,10 @@ and Rating Dashboard, plus Major Issues, to a local `progress_log.md`; a one-cli
 what recurs across 2+ sessions, so you know what to actually fix before the next round.
 - 📥 **Exportable reports** — download any report or the full log as markdown.
 - 🔗 **Connect Granola, right where you assess** — one merged Assessment tab, not a separate
-  "Connect Granola" tab to hunt for. Manual entry is a popover in the top-right corner, always
-  one click away; Granola connects below it, landing on the same browse-and-select experience
-  either way: pick a call, its summary/transcript flow straight into the assessment.
+  "Connect Granola" tab to hunt for. A single "Choose a source" card shows manual transcript entry
+  and Granola side by side, so both options are visible at once rather than one hidden behind the
+  other; picking Granola lands on the same browse-and-select experience either way: pick a call,
+  its summary/transcript flow straight into the assessment.
   - **Sign in via MCP** (any plan, including free Basic) — the primary connect option, the same
     browser OAuth flow Claude Code/Claude.ai/ChatGPT use for Granola, no pasted key. Your recent
     calls load automatically into a browsable list — select one and it fetches the transcript for
@@ -123,16 +124,16 @@ both are set, `.streamlit/secrets.toml` takes precedence.
 
 ## 🧑‍💻 Usage
 
-Everything lives on one **Assessment** tab now — connect Granola or add a transcript manually, \
-whichever you have, without switching views.
+Everything lives on one **Assessment** tab now, under a single "Choose a source" card with two \
+options side by side — connect Granola or add a transcript manually, whichever you have, without \
+switching views.
 
-**Add a transcript manually**
+**Add a transcript manually** (left card)
 
-Click **➕ Add manually** in the top-right corner (a popover, always available regardless of \
-Granola connection state). Paste or upload the **transcript**, optionally open **Additional \
-context** for the summary/target role/question context/outcome, then click **Run Assessment**.
+Paste or upload the **transcript**, optionally open **Additional context** for the summary/target \
+role/question context/outcome, then click **Run Assessment**.
 
-**Or connect Granola** — pick whichever you have:
+**Or connect Granola** (right card) — pick whichever you have:
 
 - **Sign in via MCP** (any plan, including free Basic, no key needed) — the primary "Connect a \
 source" button. Your browser opens Granola's sign-in/approval page; approve access and return to \
