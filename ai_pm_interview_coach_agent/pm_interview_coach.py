@@ -942,6 +942,7 @@ def run_assessment_flow(provider: str, api_key: str, model: str, summary: str, t
         append_to_log(session_label, report_md)
     st.session_state["last_report"] = report_md
     st.session_state["last_report_truncated"] = truncated
+    st.session_state["last_report_time"] = datetime.now()
     st.session_state["last_signals"] = compute_conversation_signals(transcript)
     if truncated:
         st.warning("The model's response hit its length limit before finishing - the report below may be incomplete. Try running the assessment again.")
@@ -961,26 +962,129 @@ STATUS_COLORS = {
     "info": "#1a56e0",
     "muted": "#6b6b6b",
 }
-STATUS_TEXT_ON_FILL = {
-    "good": "#ffffff",
-    "warning": "#1a1a19",
-    "critical": "#ffffff",
-    "info": "#ffffff",
-    "muted": "#ffffff",
-}
 # Canva Apps Design System's light-mode *subtle* feedback tokens - pastel fill + matching
 # dark-toned text, built for exactly this "chip" job (readable on white, never color-alone).
 CHIP_BG = {"good": "#e3f6ea", "warning": "#fff4d6", "critical": "#ffe6ea", "info": "#e6edff", "muted": "#f2f1ee"}
 CHIP_FG = {"good": "#0c6533", "warning": "#7a5400", "critical": "#a3122c", "info": "#123db0", "muted": "#5b5a56"}
-RATING_SCALE_LABELS = {1: "Substantial gap", 2: "Developing", 3: "Effective", 4: "Strong", 5: "Excellent"}
 
 # Explicit light theme for the report card itself, independent of Streamlit's own theme setting -
 # this is meant to read like a printed debrief, not adapt to whatever chrome it's embedded in.
 CARD_BG = "#ffffff"
-CARD_BORDER = "1px solid #e8e7e3"
-TEXT_PRIMARY = "#0e1318"
-TEXT_SECONDARY = "rgba(14,19,24,0.65)"
-TEXT_MUTED = "rgba(14,19,24,0.5)"
+CARD_BORDER = "1px solid #e2e4ea"
+TEXT_PRIMARY = "#15171c"
+TEXT_SECONDARY = "rgba(21,23,28,0.66)"
+TEXT_MUTED = "rgba(21,23,28,0.46)"
+
+# Editorial-debrief design system: cool-gray page, serif display headlines over a plain sans
+# body, a single blue accent for eyebrows/links/primary actions, and reuses the Canva-based
+# STATUS_COLORS/CHIP_BG/CHIP_FG above for every semantic (good/warning/critical) accent rather
+# than inventing a second palette - only the neutral/typography layer is new here.
+PAGE_BG = "#eef0f3"
+SURFACE_MUTED = "#f4f5f8"
+ACCENT_BLUE = "#2f54d6"
+ACCENT_BLUE_BG = "#e9edfb"
+GRAY_PILL_BG = "#eceef2"
+GRAY_PILL_FG = "#565a66"
+FONT_SERIF = "'Lora', Georgia, 'Times New Roman', serif"
+FONT_SANS = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+RATING_ACCENT = {"good": "#157a44", "warning": "#b7791f", "critical": "#b3261e", "muted": "#8a8d99"}
+
+
+def _inject_design_system() -> None:
+    st.markdown(
+        f"""
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,500;0,600;0,700;1,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+        .stApp {{ background: {PAGE_BG}; }}
+        [data-testid="stAppViewContainer"] {{ background: {PAGE_BG}; }}
+        .pmic-eyebrow {{
+            font-family: {FONT_SANS}; font-size: 12px; font-weight: 700;
+            letter-spacing: 0.09em; text-transform: uppercase; color: {ACCENT_BLUE};
+            margin: 0 0 6px;
+        }}
+        .pmic-h1 {{
+            font-family: {FONT_SERIF}; font-weight: 700; font-size: 32px;
+            line-height: 1.18; color: {TEXT_PRIMARY}; margin: 0 0 8px;
+        }}
+        .pmic-h2 {{
+            font-family: {FONT_SERIF}; font-weight: 700; font-size: 21px;
+            line-height: 1.28; color: {TEXT_PRIMARY}; margin: 0 0 4px;
+        }}
+        .pmic-subtitle {{
+            font-family: {FONT_SANS}; font-size: 14.5px; color: {TEXT_SECONDARY};
+            line-height: 1.55; margin: 0 0 4px;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _section_header_html(eyebrow: str, title: str, subtitle: str = "") -> str:
+    subtitle_html = f'<div class="pmic-subtitle">{html.escape(subtitle)}</div>' if subtitle else ""
+    return f'<div class="pmic-eyebrow">{html.escape(eyebrow)}</div><div class="pmic-h2">{html.escape(title)}</div>{subtitle_html}'
+
+
+def _meta_row_html(items: list) -> str:
+    cols = []
+    for label, value in items:
+        cols.append(
+            '<div style="flex:1;min-width:150px;">'
+            f'<div style="font-family:{FONT_SANS};font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:{TEXT_MUTED};margin-bottom:4px;">{html.escape(label)}</div>'
+            f'<div style="font-family:{FONT_SANS};font-size:14px;color:{TEXT_PRIMARY};font-weight:500;">{html.escape(value) if value else "—"}</div>'
+            "</div>"
+        )
+    return (
+        f'<div style="display:flex;gap:24px;flex-wrap:wrap;background:{CARD_BG};border:{CARD_BORDER};border-radius:14px;padding:18px 22px;margin:14px 0;">'
+        + "".join(cols) + "</div>"
+    )
+
+
+def _quote_card_html(eyebrow: str, text: str) -> str:
+    return (
+        f'<div style="background:{CARD_BG};border:{CARD_BORDER};border-radius:14px;padding:22px 26px;margin:0 0 20px;">'
+        f'<div class="pmic-eyebrow">❝ {html.escape(eyebrow)}</div>'
+        f'<div style="font-family:{FONT_SERIF};font-weight:600;font-size:19px;line-height:1.5;color:{TEXT_PRIMARY};">{html.escape(text)}</div>'
+        "</div>"
+    )
+
+
+def _rating_card_v2_html(name: str, value, note: str, evidence: str) -> str:
+    status = _numeric_status(value)
+    accent = RATING_ACCENT[status]
+    if value is None:
+        value_html = f'<div style="font-family:{FONT_SANS};font-weight:700;font-size:15px;color:{accent};margin:10px 0 8px;">Not assessed</div>'
+    else:
+        value_html = f'<div style="font-family:{FONT_SERIF};font-weight:700;font-size:30px;color:{accent};line-height:1;margin:10px 0 8px;">{int(value)}</div>'
+    note_html = f'<div style="font-size:12px;color:{TEXT_MUTED};margin-bottom:4px;">{html.escape(note)}</div>' if (value is not None and note) else ""
+    return (
+        f'<div style="flex:1;min-width:180px;background:{CARD_BG};border:{CARD_BORDER};border-top:3px solid {accent};border-radius:12px;padding:16px 18px;">'
+        f'<div style="font-family:{FONT_SANS};font-size:13px;font-weight:600;color:{TEXT_PRIMARY};">{html.escape(name)}</div>'
+        f"{value_html}{note_html}"
+        f'<div style="font-size:12.5px;color:{TEXT_SECONDARY};line-height:1.5;">{html.escape(evidence)}</div>'
+        "</div>"
+    )
+
+
+def _callout_box_html(icon: str, title: str, body_html: str, tone: str) -> str:
+    return (
+        f'<div style="background:{CHIP_BG[tone]};border-radius:14px;padding:20px 22px;height:100%;box-sizing:border-box;">'
+        f'<div style="display:flex;align-items:center;gap:8px;font-weight:700;color:{CHIP_FG[tone]};font-size:14px;margin-bottom:10px;">{icon} {html.escape(title)}</div>'
+        f'<div style="font-size:13.5px;color:{TEXT_PRIMARY};line-height:1.65;">{body_html}</div>'
+        "</div>"
+    )
+
+
+def _insight_card_html(icon: str, title: str, description: str, tone: str) -> str:
+    return (
+        f'<div style="background:{CHIP_BG[tone]};border-radius:12px;padding:14px 16px;margin-bottom:10px;">'
+        f'<div style="font-size:13px;margin-bottom:4px;">{icon}</div>'
+        f'<div style="font-weight:700;font-size:14px;color:{TEXT_PRIMARY};margin-bottom:3px;">{html.escape(title)}</div>'
+        f'<div style="font-size:12.5px;color:{TEXT_SECONDARY};line-height:1.5;">{html.escape(description)}</div>'
+        "</div>"
+    )
 
 
 def _numeric_status(value) -> str:
@@ -1096,38 +1200,12 @@ def _chip_html(text: str, status: str) -> str:
     )
 
 
-def _rating_card_html(name: str, value, note: str, evidence: str, confidence: str) -> str:
-    del confidence  # shown via chip/evidence context, not repeated on the card
-    if value is None:
-        return (
-            f'<div style="flex:1;min-width:220px;background:{CARD_BG};border:{CARD_BORDER};border-radius:14px;padding:20px;">'
-            f'<div style="font-size:13px;color:{TEXT_SECONDARY};margin-bottom:10px;">{html.escape(name)}</div>'
-            f'<div style="font-size:15px;color:{TEXT_MUTED};margin-bottom:8px;">Not assessable</div>'
-            f'<div style="font-size:12px;color:{TEXT_MUTED};line-height:1.5;">{html.escape(evidence)}</div>'
-            "</div>"
-        )
-    status = _numeric_status(value)
-    scale_label = RATING_SCALE_LABELS.get(int(value), "")
-    chip_text = f"{scale_label} · {note}" if note else scale_label
-    return (
-        f'<div style="flex:1;min-width:220px;background:{CARD_BG};border:{CARD_BORDER};border-radius:14px;padding:20px;">'
-        f'<div style="font-size:13px;color:{TEXT_SECONDARY};margin-bottom:10px;">{html.escape(name)}</div>'
-        '<div style="margin-bottom:10px;">'
-        f'<span style="font-size:34px;font-weight:700;color:{TEXT_PRIMARY};line-height:1;">{int(value)}</span>'
-        f'<span style="font-size:14px;color:{TEXT_MUTED};"> / 5</span>'
-        "</div>"
-        f'<div style="margin-bottom:10px;">{_chip_html(chip_text, status)}</div>'
-        f'<div style="font-size:13px;color:{TEXT_SECONDARY};line-height:1.5;">{html.escape(evidence)}</div>'
-        "</div>"
-    )
-
-
 def _opening_assessment_html(summary_text: str, evidence: str, note: str) -> str:
     evidence_html = f'<div style="font-size:13px;color:{TEXT_SECONDARY};line-height:1.5;margin-top:4px;">{html.escape(evidence)}</div>' if evidence else ""
     note_html = f'<div style="font-size:12px;color:{TEXT_MUTED};margin-top:6px;">{html.escape(note)}</div>' if note else ""
     return (
-        f'<div style="background:#f7f7f5;border-radius:12px;padding:16px 20px;margin:4px 0 20px;">'
-        f'<div style="font-size:13px;font-weight:600;color:{TEXT_PRIMARY};margin-bottom:4px;">Opening assessment</div>'
+        f'<div style="background:{SURFACE_MUTED};border-radius:12px;padding:16px 20px;margin:4px 0 20px;">'
+        f'<div class="pmic-eyebrow" style="margin-bottom:4px;">Opening assessment</div>'
         f'<div style="font-size:14px;color:{TEXT_SECONDARY};line-height:1.5;">{html.escape(summary_text)}</div>'
         f"{evidence_html}{note_html}</div>"
     )
@@ -1143,13 +1221,16 @@ LANDED_STATUS = {
 }
 
 
-def _landed_item_html(classification: str, excerpt: str, refers_to: str) -> str:
+def _landed_card_html(classification: str, excerpt: str, refers_to: str) -> str:
     status = LANDED_STATUS.get((classification or "").strip().lower(), "muted")
     chip = _chip_html(classification or "Unclear", status)
-    refers_html = f'<div style="font-size:12px;color:{TEXT_MUTED};margin-top:4px;">{html.escape(refers_to)}</div>' if refers_to else ""
-    quote_html = f'<div style="font-size:14px;color:{TEXT_SECONDARY};font-style:italic;margin-top:6px;">“{html.escape(excerpt)}”</div>' if excerpt else ""
+    refers_html = f'<div style="font-size:12px;color:{TEXT_MUTED};margin-top:8px;">{html.escape(refers_to)}</div>' if refers_to else ""
+    quote_html = (
+        f'<div style="font-family:{FONT_SERIF};font-weight:600;font-size:16px;color:{TEXT_PRIMARY};line-height:1.4;margin-top:10px;">“{html.escape(excerpt)}”</div>'
+        if excerpt else ""
+    )
     return (
-        '<div style="padding:12px 0;border-top:1px solid #eee;">'
+        f'<div style="flex:1;min-width:220px;background:{CARD_BG};border:{CARD_BORDER};border-radius:12px;padding:16px 18px;">'
         f"{chip}{quote_html}{refers_html}</div>"
     )
 
@@ -1195,28 +1276,14 @@ def _why_depth_bar_html(stated: int, explained: int, justified: int, gap: str) -
     return f'<div style="margin-bottom:8px;">{bar}{legend}{gap_html}</div>'
 
 
-def _what_worked_html(items: list) -> str:
-    rows = []
-    for item in items:
-        title = item.get("title") or ""
-        desc = item.get("description") or ""
-        rows.append(
-            f'<div style="border-left:3px solid {STATUS_COLORS["good"]};padding:2px 0 2px 14px;margin-bottom:14px;">'
-            f'<div style="font-size:14px;font-weight:600;color:{TEXT_PRIMARY};margin-bottom:2px;">{html.escape(title)}</div>'
-            f'<div style="font-size:13px;color:{TEXT_SECONDARY};">{html.escape(desc)}</div>'
-            "</div>"
-        )
-    return "".join(rows)
-
-
 def _major_issue_html(n: int, title: str, evidence: str, next_time: str) -> str:
-    evidence_html = f'<div style="font-size:13px;color:{TEXT_SECONDARY};margin-bottom:3px;"><strong>Evidence:</strong> {html.escape(evidence)}</div>' if evidence else ""
+    evidence_html = f'<div style="font-size:13px;color:{TEXT_SECONDARY};margin-bottom:4px;"><strong>Evidence:</strong> {html.escape(evidence)}</div>' if evidence else ""
     next_html = f'<div style="font-size:13px;color:{TEXT_PRIMARY};"><strong>Next time:</strong> {html.escape(next_time)}</div>' if next_time else ""
     return (
-        '<div style="padding:14px 0;border-top:1px solid #eee;">'
-        '<div style="display:flex;gap:10px;align-items:baseline;margin-bottom:6px;">'
-        f'<span style="font-size:13px;font-weight:700;color:{STATUS_COLORS["warning"]};">{n:02d}</span>'
-        f'<span style="font-size:14px;font-weight:600;color:{TEXT_PRIMARY};">{html.escape(title)}</span>'
+        f'<div style="background:{CARD_BG};border:{CARD_BORDER};border-radius:12px;padding:16px 18px;">'
+        '<div style="display:flex;gap:10px;align-items:baseline;margin-bottom:8px;">'
+        f'<span style="font-family:{FONT_SERIF};font-size:15px;font-weight:700;color:{RATING_ACCENT["warning"]};">{n:02d}</span>'
+        f'<span style="font-family:{FONT_SANS};font-size:14.5px;font-weight:600;color:{TEXT_PRIMARY};">{html.escape(title)}</span>'
         f"</div>{evidence_html}{next_html}</div>"
     )
 
@@ -1230,7 +1297,7 @@ def _signal_stat_html(label: str, value_text: str) -> str:
     )
 
 
-def render_report_dashboard(report_md: str, signals: dict | None = None, truncated: bool = False) -> None:
+def render_report_dashboard(report_md: str, signals: dict | None = None, truncated: bool = False, generated_at=None) -> None:
     summary, parse_error = _extract_json_summary(report_md)
     if not summary:
         if truncated:
@@ -1244,25 +1311,28 @@ def render_report_dashboard(report_md: str, signals: dict | None = None, truncat
 
     body_md = _strip_json_block(report_md)
     signals = signals or {}
+    ratings = summary.get("ratings") or []
+    date_str = (generated_at or datetime.now()).strftime("%d %b %Y").upper()
 
-    # --- Header: narrative-first, matching "how did it go" as prose, not just a number ---
-    st.caption("YOUR INTERVIEW DEBRIEF")
-    headline = summary.get("headline") or summary.get("overall_read") or "Interview assessment"
-    st.markdown(f"## {html.escape(headline)}")
-    q_types = summary.get("question_types") or "Not provided"
-    st.caption(q_types)
-    if summary.get("overall_read"):
-        st.markdown(summary["overall_read"])
-    meta_bits = []
-    if summary.get("source_quality"):
-        meta_bits.append(summary["source_quality"])
+    # --- Header ---
+    headline = summary.get("headline") or "Interview assessment"
+    st.markdown(
+        f'<div class="pmic-eyebrow">DEBRIEF REPORT · {html.escape(date_str)}</div>'
+        f'<div class="pmic-h1">{html.escape(headline)}</div>'
+        f'<div class="pmic-subtitle">A focused read of what happened, evidence attached to every claim.</div>',
+        unsafe_allow_html=True,
+    )
+
     outcome = summary.get("reported_outcome")
-    if outcome and outcome != "Not provided":
-        meta_bits.append(f"Outcome (candidate-reported): {outcome}")
+    meta_items = [
+        ("Question types", summary.get("question_types") or "Not provided"),
+        ("Source", summary.get("source_quality") or "Not provided"),
+        ("Outcome (candidate-reported)", outcome if outcome and outcome != "Not provided" else "Not provided"),
+        ("Speaker coverage", "Candidate + interviewer turns" if signals.get("speakers_identified") else "Not identified in transcript"),
+    ]
+    st.markdown(_meta_row_html(meta_items), unsafe_allow_html=True)
     if summary.get("caveats"):
-        meta_bits.append(summary["caveats"])
-    if meta_bits:
-        st.caption(" · ".join(meta_bits))
+        st.caption(summary["caveats"])
 
     # --- Opening assessment: the candidate's intro and first substantive answer, on its own ---
     opening = summary.get("opening_assessment") or {}
@@ -1272,16 +1342,17 @@ def render_report_dashboard(report_md: str, signals: dict | None = None, truncat
             unsafe_allow_html=True,
         )
 
-    # --- Layer 1: answer assessment - what is this candidate lacking, rated with evidence ---
-    st.markdown("#### Answer assessment")
-    ratings = summary.get("ratings") or []
-    cards_html = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;">'
+    if summary.get("overall_read"):
+        st.markdown(_quote_card_html("In two sentences", summary["overall_read"]), unsafe_allow_html=True)
+
+    # --- Answer assessment: five independent, evidence-backed ratings ---
+    st.markdown(_section_header_html("Provisional rubric", "Five lenses, not a verdict", "Whole-number ratings anchored to the available transcript. Not a ranking against other candidates."), unsafe_allow_html=True)
+    cards_html = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:8px;">'
     for r in ratings:
-        cards_html += _rating_card_html(r.get("name") or r.get("key") or "Dimension", r.get("value"), r.get("note") or "", r.get("evidence") or "", r.get("confidence") or "")
+        cards_html += _rating_card_v2_html(r.get("name") or r.get("key") or "Dimension", r.get("value"), r.get("note") or "", r.get("evidence") or "")
     cards_html += "</div>"
     st.markdown(cards_html, unsafe_allow_html=True)
-    st.caption("Coaching scale: 1 Substantial gap · 2 Developing · 3 Effective · 4 Strong · 5 Excellent")
-    st.caption("Provisional ratings, based on this interview only - not a ranking against other candidates.")
+    st.caption("1 Substantial gap · 2 Developing · 3 Effective · 4 Strong · 5 Excellent")
 
     why_depth = summary.get("why_depth") or {}
     stated = why_depth.get("stated") or 0
@@ -1289,45 +1360,77 @@ def render_report_dashboard(report_md: str, signals: dict | None = None, truncat
     justified = why_depth.get("justified") or 0
     why_bar = _why_depth_bar_html(stated, explained, justified, why_depth.get("gap") or "")
     if why_bar:
-        st.markdown("##### Reasoning depth")
+        st.markdown(f'<div style="font-family:{FONT_SANS};font-weight:700;font-size:14px;color:{TEXT_PRIMARY};margin:18px 0 4px;">Reasoning depth</div>', unsafe_allow_html=True)
         st.caption("How well-grounded were the candidate's choices - stated outright, explained with a reason, or justified against evidence/tradeoffs?")
         st.markdown(why_bar, unsafe_allow_html=True)
 
-    # --- Layer 2: conversation signals - measured from the transcript's own text, not estimated ---
-    if signals:
-        stat_items = []
-        if signals.get("filler_total") is not None:
-            stat_items.append(("Filler words", str(signals["filler_total"])))
-        if "speaking_share_pct" in signals:
-            stat_items.append(("Candidate speaking share", f"{signals['speaking_share_pct']}%"))
-        if "longest_answer_words" in signals:
-            stat_items.append(("Longest answer", f"{signals['longest_answer_words']} words"))
-        if signals.get("speakers_identified") and "candidate_questions" in signals:
-            stat_items.append(("Questions asked by candidate", str(signals["candidate_questions"])))
-        elif signals.get("questions_total") is not None:
-            stat_items.append(("Questions asked (either side)", str(signals["questions_total"])))
-        if stat_items:
-            st.markdown("#### Conversation signals")
-            st.markdown(
-                '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:6px;">' + "".join(_signal_stat_html(l, v) for l, v in stat_items) + "</div>",
-                unsafe_allow_html=True,
-            )
-            if not signals.get("speakers_identified"):
-                st.caption("Couldn't identify separate speakers in this transcript, so speaking share and longest answer aren't available.")
-            if signals.get("filler_breakdown"):
-                top = sorted(signals["filler_breakdown"].items(), key=lambda kv: -kv[1])[:5]
-                st.caption("Most common: " + ", ".join(f'“{w}” ({c})' for w, c in top))
+    # --- Conversation signals: measured from the transcript's own text, never estimated ---
+    stat_items = []
+    if signals.get("filler_total") is not None:
+        stat_items.append(("Filler words", str(signals["filler_total"])))
+    if "speaking_share_pct" in signals:
+        stat_items.append(("Candidate speaking share", f"{signals['speaking_share_pct']}%"))
+    if "longest_answer_words" in signals:
+        stat_items.append(("Longest answer", f"{signals['longest_answer_words']} words"))
+    if signals.get("speakers_identified") and "candidate_questions" in signals:
+        stat_items.append(("Questions asked by candidate", str(signals["candidate_questions"])))
+    elif signals.get("questions_total") is not None:
+        stat_items.append(("Questions asked (either side)", str(signals["questions_total"])))
+    if stat_items:
+        st.markdown(_section_header_html("Measured, not estimated", "Conversation signals", "Counted directly from the transcript's own text."), unsafe_allow_html=True)
+        st.markdown(
+            '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:6px;">' + "".join(_signal_stat_html(l, v) for l, v in stat_items) + "</div>",
+            unsafe_allow_html=True,
+        )
+        if not signals.get("speakers_identified"):
+            st.caption("Couldn't identify separate speakers in this transcript, so speaking share and longest answer aren't available.")
+        if signals.get("filler_breakdown"):
+            top = sorted(signals["filler_breakdown"].items(), key=lambda kv: -kv[1])[:5]
+            st.caption("Most common: " + ", ".join(f'“{w}” ({c})' for w, c in top))
 
-    # --- How the answers landed: per-exchange outcome signals, not a skill judgment ---
+    # --- Two-column: what held up (evidence) / three useful tensions (at a glance) ---
+    what_worked = summary.get("what_worked") or []
+    major_issues = summary.get("major_issues") or []
+    practice_plan = summary.get("practice_plan") or []
+    not_assessed = [r for r in ratings if r.get("value") is None]
+
+    if what_worked or major_issues or why_depth.get("gap") or not_assessed:
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.markdown(_section_header_html("Read the evidence", "What held up", "Claims below point back to the transcript, not inferred intent."), unsafe_allow_html=True)
+            if what_worked:
+                strengths_html = "<ul style='margin:0;padding-left:18px;'>" + "".join(
+                    f"<li style='margin-bottom:6px;'><strong>{html.escape(w.get('title') or '')}</strong> — {html.escape(w.get('description') or '')}</li>"
+                    for w in what_worked
+                ) + "</ul>"
+                st.markdown(_callout_box_html("✅", "Strengths to keep", strengths_html, "good"), unsafe_allow_html=True)
+            next_action = (major_issues[0].get("next_time") if major_issues else None) or (practice_plan[0] if practice_plan else None)
+            if next_action:
+                st.markdown("")
+                st.markdown(_callout_box_html("💡", "One action to practise next", html.escape(next_action), "warning"), unsafe_allow_html=True)
+        with col_right:
+            st.markdown(_section_header_html("At a glance", "Useful tensions", "Not a verdict - the specific threads worth pulling on next."), unsafe_allow_html=True)
+            tensions_html = ""
+            if why_depth.get("gap"):
+                tensions_html += _insight_card_html("☑️", "Reasoning gap", why_depth["gap"], "warning")
+            if major_issues:
+                tensions_html += _insight_card_html("🎯", major_issues[0].get("title") or "Top issue", major_issues[0].get("evidence") or "", "warning")
+            if not_assessed:
+                dim = not_assessed[0]
+                tensions_html += _insight_card_html("🎧", f"{dim.get('name') or 'Dimension'} not assessed", dim.get("evidence") or "", "muted")
+            if tensions_html:
+                st.markdown(tensions_html, unsafe_allow_html=True)
+
+    # --- Interviewer response: outcome signals, never folded into a skill rating ---
     how_it_landed = summary.get("how_it_landed") or []
     expressed_sentiment = summary.get("expressed_sentiment") or []
     if how_it_landed or expressed_sentiment:
-        st.markdown("#### How the answers landed")
+        st.markdown(_section_header_html("Interviewer response", "What the other side signalled", "Observations from transcript excerpts, not emotional interpretations."), unsafe_allow_html=True)
         if how_it_landed:
-            landed_html = "".join(
-                _landed_item_html(item.get("classification") or "", item.get("excerpt") or "", item.get("refers_to") or "")
+            landed_html = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;">' + "".join(
+                _landed_card_html(item.get("classification") or "", item.get("excerpt") or "", item.get("refers_to") or "")
                 for item in how_it_landed
-            )
+            ) + "</div>"
             st.markdown(landed_html, unsafe_allow_html=True)
         if expressed_sentiment:
             st.caption("Candidate-expressed sentiment")
@@ -1337,26 +1440,17 @@ def render_report_dashboard(report_md: str, signals: dict | None = None, truncat
             )
             st.markdown(sentiment_html, unsafe_allow_html=True)
 
-    # --- What worked, before what to fix - reinforce before critiquing ---
-    what_worked = summary.get("what_worked") or []
-    if what_worked:
-        st.markdown("#### What worked")
-        st.markdown(_what_worked_html(what_worked), unsafe_allow_html=True)
-
-    # --- Layer 3: improvement ---
-    major_issues = summary.get("major_issues") or []
+    # --- Major issues and practice: ranked by impact, each tied to a concrete next action ---
     if major_issues:
-        st.markdown("#### Major issues found")
-        st.caption("Ranked by impact")
-        issues_html = "".join(
+        st.markdown(_section_header_html("Major issues and practice", "Ranked by impact on the answer", ""), unsafe_allow_html=True)
+        issues_html = '<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;">' + "".join(
             _major_issue_html(i + 1, issue.get("title") or f"Issue {i + 1}", issue.get("evidence") or "", issue.get("next_time") or "")
             for i, issue in enumerate(major_issues)
-        )
+        ) + "</div>"
         st.markdown(issues_html, unsafe_allow_html=True)
 
-    practice_plan = summary.get("practice_plan") or []
     if practice_plan:
-        st.markdown("#### Practice plan")
+        st.markdown(f'<div style="font-family:{FONT_SANS};font-weight:700;font-size:14px;color:{TEXT_PRIMARY};margin:6px 0 6px;">Practice plan</div>', unsafe_allow_html=True)
         for item in practice_plan:
             st.markdown(f"- {html.escape(item)}")
 
@@ -1364,7 +1458,7 @@ def render_report_dashboard(report_md: str, signals: dict | None = None, truncat
     questions_meta = summary.get("questions") or []
     question_bodies = _split_question_sections(body_md)
     if questions_meta and question_bodies:
-        st.markdown("#### Your answers, unpacked")
+        st.markdown(_section_header_html("Walk the exchange", "Question-by-question review", "Open a question to see the answer, the evidence it supports, and the next-level prompt."), unsafe_allow_html=True)
         for q in questions_meta:
             try:
                 n = int(q.get("n"))
@@ -1387,7 +1481,10 @@ def render_last_report(key_suffix: str) -> None:
     if "last_report" in st.session_state:
         st.divider()
         render_report_dashboard(
-            st.session_state["last_report"], st.session_state.get("last_signals", {}), st.session_state.get("last_report_truncated", False)
+            st.session_state["last_report"],
+            st.session_state.get("last_signals", {}),
+            st.session_state.get("last_report_truncated", False),
+            st.session_state.get("last_report_time"),
         )
         st.download_button(
             "Download report (.md)",
@@ -1412,6 +1509,7 @@ def _remembered_api_key(secret_name: str) -> str:
 
 
 st.set_page_config(page_title="AI PM Interview Coach", page_icon="🎯", layout="wide")
+_inject_design_system()
 
 with st.sidebar:
     st.header("🔑 Settings")
@@ -1450,66 +1548,86 @@ st.caption(
 )
 st.caption("**Question types recognized:** " + " · ".join(QUESTION_TYPES))
 
-tab_analyze, tab_granola, tab_log = st.tabs(["📝 Run Assessment", "🔗 Connect Granola", "📈 Progress Log"])
+tab_analyze, tab_log = st.tabs(["📝 Assessment", "📈 Progress Log"])
 
 with tab_analyze:
-    with st.expander("Additional context (optional, but improves the assessment)"):
-        summary = st.text_area(
-            "Interview summary (e.g. Granola's AI-generated notes)",
-            height=150,
-            placeholder="Paste the meeting summary/notes here, if you have them separately from the raw transcript...",
+    header_left, header_right = st.columns([5, 2])
+    with header_left:
+        st.markdown(
+            _section_header_html("Your workspace", "Bring an interview to review", "Connect Granola, or add a transcript manually - both are available here."),
+            unsafe_allow_html=True,
         )
-        col1, col2 = st.columns(2)
-        with col1:
-            target_role = st.text_input("Target role", placeholder="e.g. Senior PM, Growth")
-        with col2:
-            outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS)
-        question_context = st.text_area(
-            "Question context",
-            height=80,
-            placeholder="e.g. 45-minute product sense round, panel of two interviewers...",
-        )
-        outcome_other = ""
-        if outcome == "Other (describe below)":
-            outcome_other = st.text_input("Describe the outcome")
+    with header_right:
+        st.write("")
+        st.write("")
+        with st.popover("➕ Add manually", use_container_width=True):
+            st.markdown('<div class="pmic-eyebrow">Manual transcript</div>', unsafe_allow_html=True)
+            with st.expander("Additional context (optional, but improves the assessment)"):
+                summary = st.text_area(
+                    "Interview summary (e.g. Granola's AI-generated notes)",
+                    height=150,
+                    placeholder="Paste the meeting summary/notes here, if you have them separately from the raw transcript...",
+                )
+                col1, col2 = st.columns(2)
+                with col1:
+                    target_role = st.text_input("Target role", placeholder="e.g. Senior PM, Growth")
+                with col2:
+                    outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS)
+                question_context = st.text_area(
+                    "Question context",
+                    height=80,
+                    placeholder="e.g. 45-minute product sense round, panel of two interviewers...",
+                )
+                outcome_other = ""
+                if outcome == "Other (describe below)":
+                    outcome_other = st.text_input("Describe the outcome")
 
-    upload = st.file_uploader("Upload a transcript (.txt)", type=["txt"])
-    default_text = upload.read().decode("utf-8") if upload else ""
-    transcript = st.text_area(
-        "Transcript",
-        value=default_text,
-        height=300,
-        placeholder="Interviewer: Let's start with a product sense question...\nCandidate: Sure, so I'd first want to understand...",
-    )
-
-    analyze_clicked = st.button("Run Assessment", type="primary", use_container_width=True)
-
-    if analyze_clicked:
-        resolved_outcome = outcome_other.strip() if outcome == "Other (describe below)" and outcome_other.strip() else outcome
-        run_assessment_flow(provider, api_key, model, summary, transcript, target_role, question_context, resolved_outcome, candidate_name)
-
-    render_last_report("analyze")
-
-with tab_granola:
-    connection_method = st.radio(
-        "Connection method",
-        ["API key (Business/Enterprise plan)", "Sign in via MCP (any plan, experimental)"],
-        horizontal=True,
-    )
-
-    if connection_method == "API key (Business/Enterprise plan)":
-        if not st.session_state.get("granola_connected"):
-            st.caption(
-                "Requires a Granola Business or Enterprise plan - API access isn't available on "
-                "the free Basic plan."
+            upload = st.file_uploader("Upload a transcript (.txt)", type=["txt"])
+            default_text = upload.read().decode("utf-8") if upload else ""
+            transcript = st.text_area(
+                "Transcript",
+                value=default_text,
+                height=300,
+                placeholder="Interviewer: Let's start with a product sense question...\nCandidate: Sure, so I'd first want to understand...",
             )
+
+            analyze_clicked = st.button("Run Assessment", type="primary", use_container_width=True)
+
+            if analyze_clicked:
+                resolved_outcome = outcome_other.strip() if outcome == "Other (describe below)" and outcome_other.strip() else outcome
+                run_assessment_flow(provider, api_key, model, summary, transcript, target_role, question_context, resolved_outcome, candidate_name)
+
+    st.markdown('<div style="height:6px;"></div>', unsafe_allow_html=True)
+
+    connected_rest = bool(st.session_state.get("granola_connected"))
+    connected_mcp = bool(st.session_state.get("granola_mcp_tools"))
+
+    if not connected_rest and not connected_mcp:
+        st.markdown(_section_header_html("Connect a source", "Pull straight from Granola", ""), unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="background:{CARD_BG};border:{CARD_BORDER};border-radius:14px;padding:22px 24px 6px;margin-bottom:2px;">'
+            f'<div style="font-family:{FONT_SANS};font-size:14px;color:{TEXT_SECONDARY};line-height:1.6;">'
+            "Works on any Granola plan, including Basic - no API key needed. Your recent calls load "
+            "automatically into a browsable list once connected." "</div></div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("🎧 Connect via MCP", type="primary", use_container_width=True):
+            with st.spinner("Opening Granola in your browser - approve access there to continue (up to 3 minutes)..."):
+                try:
+                    tools = granola_mcp_connect()
+                except GranolaAPIError as e:
+                    st.error(str(e))
+                else:
+                    st.session_state["granola_mcp_tools"] = tools
+                    st.rerun()
+        with st.expander("Have a Granola API key instead? (Business/Enterprise plan)"):
             granola_key_input = st.text_input(
                 "Granola API key",
                 type="password",
                 placeholder="grn_...",
                 help="Generate one in the Granola desktop app, under Settings → API access.",
             )
-            if st.button("Connect", type="primary"):
+            if st.button("Connect", type="primary", key="granola_key_connect_btn"):
                 if not granola_key_input:
                     st.error("Enter your Granola API key first.")
                 else:
@@ -1524,118 +1642,118 @@ with tab_granola:
                             for k in ["granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
                                 st.session_state.pop(k, None)
                             st.rerun()
-        else:
-            granola_key = st.session_state["granola_key"]
 
-            top_left, top_right = st.columns([4, 1])
-            with top_right:
-                if st.button("Disconnect", key="granola_key_disconnect"):
-                    for k in ["granola_connected", "granola_key", "granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
-                        st.session_state.pop(k, None)
-                    st.rerun()
+    elif connected_rest:
+        st.markdown(_section_header_html("Connected via API key", "Your recent interviews", ""), unsafe_allow_html=True)
+        granola_key = st.session_state["granola_key"]
 
-            if "granola_folders" not in st.session_state:
-                try:
-                    st.session_state["granola_folders"] = granola_list_all_folders(granola_key)
-                except GranolaAPIError as e:
-                    st.session_state["granola_folders"] = []
-                    st.warning(f"Couldn't load folders: {e}")
+        top_left, top_right = st.columns([4, 1])
+        with top_right:
+            if st.button("Disconnect", key="granola_key_disconnect"):
+                for k in ["granola_connected", "granola_key", "granola_notes", "granola_cursor", "granola_has_more", "granola_folders", "granola_folder_id", "granola_selected_note"]:
+                    st.session_state.pop(k, None)
+                st.rerun()
 
-            folder_options = {"All folders": None}
-            for f in st.session_state["granola_folders"]:
-                folder_options[f["name"]] = f["id"]
-            with top_left:
-                folder_label = st.selectbox("Folder", list(folder_options.keys()))
-            selected_folder_id = folder_options[folder_label]
+        if "granola_folders" not in st.session_state:
+            try:
+                st.session_state["granola_folders"] = granola_list_all_folders(granola_key)
+            except GranolaAPIError as e:
+                st.session_state["granola_folders"] = []
+                st.warning(f"Couldn't load folders: {e}")
 
-            if "granola_notes" not in st.session_state or st.session_state.get("granola_folder_id") != selected_folder_id:
-                try:
-                    notes, has_more, cursor = granola_list_notes(granola_key, folder_id=selected_folder_id, page_size=20)
-                except GranolaAPIError as e:
-                    st.error(str(e))
-                    notes, has_more, cursor = [], False, None
-                st.session_state["granola_notes"] = notes
-                st.session_state["granola_has_more"] = has_more
-                st.session_state["granola_cursor"] = cursor
-                st.session_state["granola_folder_id"] = selected_folder_id
+        folder_options = {"All folders": None}
+        for f in st.session_state["granola_folders"]:
+            folder_options[f["name"]] = f["id"]
+        with top_left:
+            folder_label = st.selectbox("Folder", list(folder_options.keys()))
+        selected_folder_id = folder_options[folder_label]
 
-            search = st.text_input("Filter loaded interviews by title", placeholder="Search...")
-            notes = st.session_state["granola_notes"]
-            if search:
-                notes = [n for n in notes if search.lower() in (n.get("title") or "").lower()]
+        if "granola_notes" not in st.session_state or st.session_state.get("granola_folder_id") != selected_folder_id:
+            try:
+                notes, has_more, cursor = granola_list_notes(granola_key, folder_id=selected_folder_id, page_size=20)
+            except GranolaAPIError as e:
+                st.error(str(e))
+                notes, has_more, cursor = [], False, None
+            st.session_state["granola_notes"] = notes
+            st.session_state["granola_has_more"] = has_more
+            st.session_state["granola_cursor"] = cursor
+            st.session_state["granola_folder_id"] = selected_folder_id
 
-            if not notes:
-                st.info("No interviews found. Only meetings with a generated Granola summary appear here.")
+        search = st.text_input("Filter loaded interviews by title", placeholder="Search...")
+        notes = st.session_state["granola_notes"]
+        if search:
+            notes = [n for n in notes if search.lower() in (n.get("title") or "").lower()]
 
-            for note in notes:
-                title = note.get("title") or "Untitled interview"
-                created = (note.get("created_at") or "")[:10]
-                owner = (note.get("owner") or {}).get("name") or (note.get("owner") or {}).get("email") or ""
-                row = st.columns([5, 2, 2, 1])
-                row[0].markdown(f"**{title}**")
-                row[1].caption(created)
-                row[2].caption(owner)
-                if row[3].button("Select", key=f"select_{note['id']}"):
-                    with st.spinner("Fetching interview details..."):
-                        try:
-                            st.session_state["granola_selected_note"] = granola_get_note(granola_key, note["id"])
-                        except GranolaAPIError as e:
-                            st.error(str(e))
+        if not notes:
+            st.info("No interviews found. Only meetings with a generated Granola summary appear here.")
 
-            if st.session_state.get("granola_has_more"):
-                if st.button("Load more interviews"):
+        for note in notes:
+            title = note.get("title") or "Untitled interview"
+            created = (note.get("created_at") or "")[:10]
+            owner = (note.get("owner") or {}).get("name") or (note.get("owner") or {}).get("email") or ""
+            row = st.columns([5, 2, 2, 1])
+            row[0].markdown(f"**{title}**")
+            row[1].caption(created)
+            row[2].caption(owner)
+            if row[3].button("Select", key=f"select_{note['id']}"):
+                with st.spinner("Fetching interview details..."):
                     try:
-                        more_notes, has_more, cursor = granola_list_notes(
-                            granola_key, folder_id=selected_folder_id, cursor=st.session_state["granola_cursor"], page_size=20
-                        )
-                        st.session_state["granola_notes"] = st.session_state["granola_notes"] + more_notes
-                        st.session_state["granola_has_more"] = has_more
-                        st.session_state["granola_cursor"] = cursor
-                        st.rerun()
+                        st.session_state["granola_selected_note"] = granola_get_note(granola_key, note["id"])
                     except GranolaAPIError as e:
                         st.error(str(e))
 
-            selected_note = st.session_state.get("granola_selected_note")
-            if selected_note:
-                st.divider()
-                st.subheader(selected_note.get("title") or "Untitled interview")
-
-                g_summary = selected_note.get("summary_markdown") or selected_note.get("summary_text") or ""
-                transcript_items = selected_note.get("transcript")
-                g_transcript = format_granola_transcript(transcript_items) if transcript_items else ""
-
-                if g_summary:
-                    st.markdown("**Summary**")
-                    st.markdown(g_summary)
-                else:
-                    st.caption("No summary available for this interview.")
-
-                if not g_transcript:
-                    st.caption(
-                        "No transcript for this interview - the assessment will run on the summary "
-                        "alone. Verbal-delivery ratings will come back \"Not assessable.\""
+        if st.session_state.get("granola_has_more"):
+            if st.button("Load more interviews"):
+                try:
+                    more_notes, has_more, cursor = granola_list_notes(
+                        granola_key, folder_id=selected_folder_id, cursor=st.session_state["granola_cursor"], page_size=20
                     )
+                    st.session_state["granola_notes"] = st.session_state["granola_notes"] + more_notes
+                    st.session_state["granola_has_more"] = has_more
+                    st.session_state["granola_cursor"] = cursor
+                    st.rerun()
+                except GranolaAPIError as e:
+                    st.error(str(e))
 
-                with st.expander("Additional context (optional, but improves the assessment)"):
-                    g_col1, g_col2 = st.columns(2)
-                    with g_col1:
-                        g_target_role = st.text_input("Target role", key="g_target_role", placeholder="e.g. Senior PM, Growth")
-                    with g_col2:
-                        g_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="g_outcome")
-                    g_question_context = st.text_area("Question context", key="g_question_context", height=80)
-                    g_outcome_other = ""
-                    if g_outcome == "Other (describe below)":
-                        g_outcome_other = st.text_input("Describe the outcome", key="g_outcome_other")
+        selected_note = st.session_state.get("granola_selected_note")
+        if selected_note:
+            st.divider()
+            st.subheader(selected_note.get("title") or "Untitled interview")
 
-                if st.button("Run Assessment on this interview", type="primary", use_container_width=True):
-                    g_resolved_outcome = g_outcome_other.strip() if g_outcome == "Other (describe below)" and g_outcome_other.strip() else g_outcome
-                    session_label = selected_note.get("title") or "Granola interview"
-                    run_assessment_flow(provider, api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, session_label)
+            g_summary = selected_note.get("summary_markdown") or selected_note.get("summary_text") or ""
+            transcript_items = selected_note.get("transcript")
+            g_transcript = format_granola_transcript(transcript_items) if transcript_items else ""
 
-                render_last_report("granola")
+            if g_summary:
+                st.markdown("**Summary**")
+                st.markdown(g_summary)
+            else:
+                st.caption("No summary available for this interview.")
 
-    else:  # Sign in via MCP
-        st.caption("Works on any Granola plan, including Basic - no API key needed. Browse your recent calls and pick one, the same way the API key flow works.")
+            if not g_transcript:
+                st.caption(
+                    "No transcript for this interview - the assessment will run on the summary "
+                    "alone. Verbal-delivery ratings will come back \"Not assessable.\""
+                )
+
+            with st.expander("Additional context (optional, but improves the assessment)"):
+                g_col1, g_col2 = st.columns(2)
+                with g_col1:
+                    g_target_role = st.text_input("Target role", key="g_target_role", placeholder="e.g. Senior PM, Growth")
+                with g_col2:
+                    g_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="g_outcome")
+                g_question_context = st.text_area("Question context", key="g_question_context", height=80)
+                g_outcome_other = ""
+                if g_outcome == "Other (describe below)":
+                    g_outcome_other = st.text_input("Describe the outcome", key="g_outcome_other")
+
+            if st.button("Run Assessment on this interview", type="primary", use_container_width=True):
+                g_resolved_outcome = g_outcome_other.strip() if g_outcome == "Other (describe below)" and g_outcome_other.strip() else g_outcome
+                session_label = selected_note.get("title") or "Granola interview"
+                run_assessment_flow(provider, api_key, model, g_summary, g_transcript, g_target_role, g_question_context, g_resolved_outcome, session_label)
+
+    elif connected_mcp:
+        st.markdown(_section_header_html("Connected via MCP", "Your recent calls", ""), unsafe_allow_html=True)
 
         MCP_SESSION_KEYS = [
             "granola_mcp_tools", "granola_mcp_tool_schemas", "granola_mcp_tokens", "granola_mcp_client_info",
@@ -1643,129 +1761,118 @@ with tab_granola:
             "granola_mcp_selected_meeting", "mcp_pulled_summary", "mcp_pulled_transcript",
         ]
 
-        if not st.session_state.get("granola_mcp_tools"):
-            if st.button("Sign in with Granola", type="primary"):
-                with st.spinner("Opening Granola in your browser - approve access there to continue (up to 3 minutes)..."):
-                    try:
-                        tools = granola_mcp_connect()
-                    except GranolaAPIError as e:
-                        st.error(str(e))
-                    else:
-                        st.session_state["granola_mcp_tools"] = tools
-                        st.rerun()
-        else:
-            tool_names = st.session_state["granola_mcp_tools"]
-            tool_schemas = st.session_state.get("granola_mcp_tool_schemas", {})
+        tool_names = st.session_state["granola_mcp_tools"]
+        tool_schemas = st.session_state.get("granola_mcp_tool_schemas", {})
 
-            top_left, top_right = st.columns([4, 1])
-            with top_left:
-                st.success(f"Connected via MCP. {len(tool_names)} tools available.")
-            with top_right:
-                if st.button("Disconnect", key="granola_mcp_disconnect"):
-                    for k in MCP_SESSION_KEYS:
-                        st.session_state.pop(k, None)
-                    st.rerun()
+        top_left, top_right = st.columns([4, 1])
+        with top_left:
+            st.caption(f"{len(tool_names)} tools available.")
+        with top_right:
+            if st.button("Disconnect", key="granola_mcp_disconnect"):
+                for k in MCP_SESSION_KEYS:
+                    st.session_state.pop(k, None)
+                st.rerun()
 
-            # Auto-load the call list once per connection - this is what makes MCP feel like
-            # "one connected experience" instead of a manual tool console the user has to drive.
-            if "list_meetings" in tool_names and "granola_mcp_meetings" not in st.session_state:
-                with st.spinner("Loading your recent calls..."):
-                    try:
-                        result = granola_mcp_call_tool("list_meetings", {})
-                    except GranolaAPIError as e:
-                        st.session_state["granola_mcp_meetings_error"] = str(e)
+        # Auto-load the call list once per connection - this is what makes MCP feel like
+        # "one connected experience" instead of a manual tool console the user has to drive.
+        if "list_meetings" in tool_names and "granola_mcp_meetings" not in st.session_state:
+            with st.spinner("Loading your recent calls..."):
+                try:
+                    result = granola_mcp_call_tool("list_meetings", {})
+                except GranolaAPIError as e:
+                    st.session_state["granola_mcp_meetings_error"] = str(e)
+                    st.session_state["granola_mcp_meetings"] = []
+                    st.session_state["granola_mcp_meetings_found"] = False
+                else:
+                    if result["is_error"]:
+                        st.session_state["granola_mcp_meetings_error"] = result["text"] or "list_meetings returned an error."
                         st.session_state["granola_mcp_meetings"] = []
                         st.session_state["granola_mcp_meetings_found"] = False
                     else:
-                        if result["is_error"]:
-                            st.session_state["granola_mcp_meetings_error"] = result["text"] or "list_meetings returned an error."
-                            st.session_state["granola_mcp_meetings"] = []
-                            st.session_state["granola_mcp_meetings_found"] = False
+                        meetings = _find_meeting_list(result)
+                        st.session_state["granola_mcp_meetings"] = meetings or []
+                        st.session_state["granola_mcp_meetings_found"] = meetings is not None
+
+        meetings_found = st.session_state.get("granola_mcp_meetings_found", False)
+
+        if meetings_found:
+            meetings = st.session_state.get("granola_mcp_meetings", [])
+            list_top_left, list_top_right = st.columns([4, 1])
+            with list_top_left:
+                search = st.text_input("Filter your calls by title", placeholder="Search...", key="mcp_meeting_search")
+            with list_top_right:
+                st.write("")
+                if st.button("🔄 Refresh", key="mcp_refresh_meetings"):
+                    for k in ["granola_mcp_meetings", "granola_mcp_meetings_found", "granola_mcp_meetings_error"]:
+                        st.session_state.pop(k, None)
+                    st.rerun()
+
+            visible = [m for m in meetings if search.lower() in _meeting_title(m).lower()] if search else meetings
+            if not meetings:
+                st.info("No calls found via MCP yet.")
+            elif not visible:
+                st.info("No calls match your search.")
+            for m in visible:
+                mid = _meeting_id(m)
+                row = st.columns([6, 2, 1])
+                row[0].markdown(f"**{_meeting_title(m)}**")
+                row[1].caption(_meeting_date(m))
+                if row[2].button("Select", key=f"mcp_select_{mid}"):
+                    id_arg = _tool_id_arg_name(tool_schemas.get("get_meeting_transcript", {}))
+                    with st.spinner("Fetching transcript..."):
+                        try:
+                            t_result = granola_mcp_call_tool("get_meeting_transcript", {id_arg: mid})
+                        except GranolaAPIError as e:
+                            st.error(str(e))
                         else:
-                            meetings = _find_meeting_list(result)
-                            st.session_state["granola_mcp_meetings"] = meetings or []
-                            st.session_state["granola_mcp_meetings_found"] = meetings is not None
-
-            meetings_found = st.session_state.get("granola_mcp_meetings_found", False)
-
-            if meetings_found:
-                meetings = st.session_state.get("granola_mcp_meetings", [])
-                list_top_left, list_top_right = st.columns([4, 1])
-                with list_top_left:
-                    search = st.text_input("Filter your calls by title", placeholder="Search...", key="mcp_meeting_search")
-                with list_top_right:
-                    st.write("")
-                    if st.button("🔄 Refresh", key="mcp_refresh_meetings"):
-                        for k in ["granola_mcp_meetings", "granola_mcp_meetings_found", "granola_mcp_meetings_error"]:
-                            st.session_state.pop(k, None)
-                        st.rerun()
-
-                visible = [m for m in meetings if search.lower() in _meeting_title(m).lower()] if search else meetings
-                if not meetings:
-                    st.info("No calls found via MCP yet.")
-                elif not visible:
-                    st.info("No calls match your search.")
-                for m in visible:
-                    mid = _meeting_id(m)
-                    row = st.columns([6, 2, 1])
-                    row[0].markdown(f"**{_meeting_title(m)}**")
-                    row[1].caption(_meeting_date(m))
-                    if row[2].button("Select", key=f"mcp_select_{mid}"):
-                        id_arg = _tool_id_arg_name(tool_schemas.get("get_meeting_transcript", {}))
-                        with st.spinner("Fetching transcript..."):
-                            try:
-                                t_result = granola_mcp_call_tool("get_meeting_transcript", {id_arg: mid})
-                            except GranolaAPIError as e:
-                                st.error(str(e))
+                            if t_result["is_error"]:
+                                st.error(t_result["text"] or "Couldn't fetch the transcript for this call.")
                             else:
-                                if t_result["is_error"]:
-                                    st.error(t_result["text"] or "Couldn't fetch the transcript for this call.")
-                                else:
-                                    st.session_state["granola_mcp_selected_meeting"] = m
-                                    st.session_state["mcp_pulled_summary"] = _meeting_summary(m)
-                                    st.session_state["mcp_pulled_transcript"] = t_result.get("text") or ""
-                                    st.rerun()
+                                st.session_state["granola_mcp_selected_meeting"] = m
+                                st.session_state["mcp_pulled_summary"] = _meeting_summary(m)
+                                st.session_state["mcp_pulled_transcript"] = t_result.get("text") or ""
+                                st.rerun()
 
-                with st.expander("Advanced: raw tool console"):
-                    _render_mcp_raw_console(tool_names, tool_schemas)
-            else:
-                if st.session_state.get("granola_mcp_meetings_error"):
-                    st.warning(f"Couldn't load your call list: {st.session_state['granola_mcp_meetings_error']}")
-                else:
-                    st.info(
-                        "Couldn't build a browsable call list from this server's response - Granola hasn't "
-                        "published exact MCP output schemas for third-party clients, so this falls back to the "
-                        "raw tool console below rather than guessing at a shape that might be wrong."
-                    )
+            with st.expander("Advanced: raw tool console"):
                 _render_mcp_raw_console(tool_names, tool_schemas)
-
-            selected_meeting = st.session_state.get("granola_mcp_selected_meeting")
-            if st.session_state.get("mcp_pulled_summary") or st.session_state.get("mcp_pulled_transcript"):
-                st.divider()
-                st.subheader(_meeting_title(selected_meeting) if selected_meeting else "Run assessment on the pulled content")
-                mcp_summary = st.text_area(
-                    "Summary", value=st.session_state.get("mcp_pulled_summary", ""), height=120, key="mcp_summary_field"
+        else:
+            if st.session_state.get("granola_mcp_meetings_error"):
+                st.warning(f"Couldn't load your call list: {st.session_state['granola_mcp_meetings_error']}")
+            else:
+                st.info(
+                    "Couldn't build a browsable call list from this server's response - Granola hasn't "
+                    "published exact MCP output schemas for third-party clients, so this falls back to the "
+                    "raw tool console below rather than guessing at a shape that might be wrong."
                 )
-                mcp_transcript = st.text_area(
-                    "Transcript", value=st.session_state.get("mcp_pulled_transcript", ""), height=200, key="mcp_transcript_field"
-                )
-                with st.expander("Additional context (optional, but improves the assessment)"):
-                    mcp_col1, mcp_col2 = st.columns(2)
-                    with mcp_col1:
-                        mcp_target_role = st.text_input("Target role", key="mcp_target_role", placeholder="e.g. Senior PM, Growth")
-                    with mcp_col2:
-                        mcp_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="mcp_outcome")
-                    mcp_question_context = st.text_area("Question context", key="mcp_question_context", height=80)
-                    mcp_outcome_other = ""
-                    if mcp_outcome == "Other (describe below)":
-                        mcp_outcome_other = st.text_input("Describe the outcome", key="mcp_outcome_other")
+            _render_mcp_raw_console(tool_names, tool_schemas)
 
-                if st.button("Run Assessment on this content", type="primary", use_container_width=True):
-                    mcp_resolved_outcome = mcp_outcome_other.strip() if mcp_outcome == "Other (describe below)" and mcp_outcome_other.strip() else mcp_outcome
-                    session_label = _meeting_title(selected_meeting) if selected_meeting else "Granola interview (via MCP)"
-                    run_assessment_flow(provider, api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, session_label)
+        selected_meeting = st.session_state.get("granola_mcp_selected_meeting")
+        if st.session_state.get("mcp_pulled_summary") or st.session_state.get("mcp_pulled_transcript"):
+            st.divider()
+            st.subheader(_meeting_title(selected_meeting) if selected_meeting else "Run assessment on the pulled content")
+            mcp_summary = st.text_area(
+                "Summary", value=st.session_state.get("mcp_pulled_summary", ""), height=120, key="mcp_summary_field"
+            )
+            mcp_transcript = st.text_area(
+                "Transcript", value=st.session_state.get("mcp_pulled_transcript", ""), height=200, key="mcp_transcript_field"
+            )
+            with st.expander("Additional context (optional, but improves the assessment)"):
+                mcp_col1, mcp_col2 = st.columns(2)
+                with mcp_col1:
+                    mcp_target_role = st.text_input("Target role", key="mcp_target_role", placeholder="e.g. Senior PM, Growth")
+                with mcp_col2:
+                    mcp_outcome = st.selectbox("Candidate-reported outcome", OUTCOME_OPTIONS, key="mcp_outcome")
+                mcp_question_context = st.text_area("Question context", key="mcp_question_context", height=80)
+                mcp_outcome_other = ""
+                if mcp_outcome == "Other (describe below)":
+                    mcp_outcome_other = st.text_input("Describe the outcome", key="mcp_outcome_other")
 
-                render_last_report("granola_mcp")
+            if st.button("Run Assessment on this content", type="primary", use_container_width=True):
+                mcp_resolved_outcome = mcp_outcome_other.strip() if mcp_outcome == "Other (describe below)" and mcp_outcome_other.strip() else mcp_outcome
+                session_label = _meeting_title(selected_meeting) if selected_meeting else "Granola interview (via MCP)"
+                run_assessment_flow(provider, api_key, model, mcp_summary, mcp_transcript, mcp_target_role, mcp_question_context, mcp_resolved_outcome, session_label)
+
+    render_last_report("assessment")
 
 with tab_log:
     log_content = read_log()

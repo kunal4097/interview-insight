@@ -17,7 +17,7 @@ relevance to the role, ownership clarity, concrete impact, and concision, kept s
 per-question breakdown.
   - **Answer assessment** — five independent 1-5 coaching ratings, each with evidence: **Answer \
 relevance**, **Decision reasoning**, **Metrics and evidence**, **Communication clarity**, and \
-**Speaking delivery**. Dimensions without evidence show "Not assessable" instead of a guessed \
+**Speaking delivery**. Dimensions without evidence show "Not assessed" instead of a guessed \
 score — including Speaking delivery, which is only rated when the transcript is a faithful, \
 turn-by-turn capture (and only judges pace/pauses when real timing data exists).
   - **Reasoning depth** — a stacked bar showing how many of the candidate's choices were merely \
@@ -47,15 +47,20 @@ omitted from every report.
 and Rating Dashboard, plus Major Issues, to a local `progress_log.md`; a one-click summary surfaces \
 what recurs across 2+ sessions, so you know what to actually fix before the next round.
 - 📥 **Exportable reports** — download any report or the full log as markdown.
-- 🔗 **Connect Granola directly** — a "Connect Granola" tab with two connection methods, both
-  landing on the same browse-and-select experience: pick a call, its summary/transcript flow
-  straight into the assessment.
-  - **API key** (Business/Enterprise plan) — paste a key, browse recorded interviews by folder.
-  - **Sign in via MCP** (any plan, including free Basic) — the same browser OAuth flow Claude
-    Code/Claude.ai/ChatGPT use for Granola, no pasted key. Your recent calls load automatically
-    into the same kind of browsable list as the API key flow — select one and it fetches the
-    transcript for you. See the note below on the fallback path for when a server's response
-    can't be parsed into a call list.
+- 🔗 **Connect Granola, right where you assess** — one merged Assessment tab, not a separate
+  "Connect Granola" tab to hunt for. Manual entry is a popover in the top-right corner, always
+  one click away; Granola connects below it, landing on the same browse-and-select experience
+  either way: pick a call, its summary/transcript flow straight into the assessment.
+  - **Sign in via MCP** (any plan, including free Basic) — the primary connect option, the same
+    browser OAuth flow Claude Code/Claude.ai/ChatGPT use for Granola, no pasted key. Your recent
+    calls load automatically into a browsable list — select one and it fetches the transcript for
+    you. See the note below on the fallback path for when a server's response can't be parsed
+    into a call list.
+  - **API key** (Business/Enterprise plan) — a secondary option under "Have a Granola API key
+    instead?"; paste a key, browse recorded interviews by folder.
+- 🎨 **A calmer, editorial read** — serif display headlines, an eyebrow-labelled section pattern,
+  and status-colored rating cards on a quiet neutral background, so the report reads like a
+  debrief you'd actually want to sit with, not a dashboard.
 
 ## 🛠️ Tech Stack
 
@@ -118,51 +123,40 @@ both are set, `.streamlit/secrets.toml` takes precedence.
 
 ## 🧑‍💻 Usage
 
-**Option A — paste or upload manually (Run Assessment tab)**
+Everything lives on one **Assessment** tab now — connect Granola or add a transcript manually, \
+whichever you have, without switching views.
 
-1. **Gather what you have** — a summary (e.g. Granola's AI-generated notes), a transcript, or \
-both. You need at least one; more context (target role, round type, reported outcome) sharpens the \
-assessment but isn't required.
-2. Open the **Additional context** expander to add the interview summary, target role, question \
-context, and candidate-reported outcome (advanced / offer / rejected / no news yet) — all optional.
-3. Paste or upload the **transcript**.
-4. Click **Run Assessment**.
+**Add a transcript manually**
 
-**Option B — connect Granola with an API key (Connect Granola tab)**
+Click **➕ Add manually** in the top-right corner (a popover, always available regardless of \
+Granola connection state). Paste or upload the **transcript**, optionally open **Additional \
+context** for the summary/target role/question context/outcome, then click **Run Assessment**.
 
-1. Paste your **Granola API key** (`grn_...` — generate one in the Granola desktop app under \
-Settings → API access) and click **Connect**. The app makes one live call to verify the key before \
-proceeding.
-2. **Browse your interviews** — filter by folder, search loaded titles, and click **Select** on \
-one. Only meetings with a generated Granola summary appear, per Granola's API.
-3. The interview's **summary and transcript load automatically** (the app pages through Granola's \
-transcript endpoint itself when a transcript is too large to return inline — no manual work).
-4. Add optional context (target role, question context, outcome), then click **Run Assessment on \
-this interview**.
+**Or connect Granola** — pick whichever you have:
 
-**Option C — sign in via MCP, no key (Connect Granola tab, "Sign in via MCP")**
-
-1. Run `pip install mcp` (not in `requirements.txt` by default — see Notes below).
-2. Switch the connection method to **Sign in via MCP** and click **Sign in with Granola**. Your \
-browser opens Granola's sign-in/approval page; approve access and return to the app (it's waiting \
-on a local callback, no copy-pasting a code or URL).
-3. Your recent calls load automatically into a browsable, searchable list — filter by title and \
-click **Select** on one. Its transcript (and summary, when the call list carries one) flow \
-straight into the assessment fields below.
-4. Add optional context, then click **Run Assessment on this content**.
-
-If Granola's response for a given account/server can't be parsed into a recognizable call list \
-(see the note below on why this can happen), the app falls back to a raw tool console instead — \
-pick a tool, check its real input schema, call it, and pull the result in manually with **Use as \
-summary** / **Use as transcript**.
+- **Sign in via MCP** (any plan, including free Basic, no key needed) — the primary "Connect a \
+source" button. Your browser opens Granola's sign-in/approval page; approve access and return to \
+the app (it's waiting on a local callback, no copy-pasting a code or URL). Run `pip install mcp` \
+first (not in `requirements.txt` by default — see Notes below). Once connected, your recent calls \
+load automatically into a browsable, searchable list — filter by title and click **Select** on \
+one; its transcript (and summary, when the call list carries one) flow straight into the \
+assessment fields below. If Granola's response for a given account/server can't be parsed into a \
+recognizable call list (see the note below on why this can happen), the app falls back to a raw \
+tool console instead — pick a tool, check its real input schema, call it, and pull the result in \
+manually with **Use as summary** / **Use as transcript**.
+- **API key** (Business/Enterprise plan) — open "Have a Granola API key instead?", paste your key \
+(`grn_...` — generate one in the Granola desktop app under Settings → API access) and click \
+**Connect**. Browse by folder, search loaded titles, and click **Select** on one — summary and \
+transcript load automatically (the app pages through Granola's transcript endpoint itself when a \
+transcript is too large to return inline).
 
 **Then, either way:**
 
-5. **Read the report** — Snapshot and Opening Assessment, then the five-dimension Rating \
-Dashboard, a question-by-question breakdown, how the answers landed, an improved-answer rewrite, a \
-practice plan, and the top issues found. Download it as markdown.
-6. Check the **Progress Log** tab after a few sessions and click **Summarize recurring issues** \
-to see what keeps costing you points.
+Add optional context if you like, click **Run Assessment**, and **read the report** — a debrief \
+header, the five-dimension rating rubric, conversation signals measured from the transcript, how \
+the answers landed, a question-by-question breakdown, an improved-answer rewrite, a practice plan, \
+and the top issues found. Download it as markdown. Check the **Progress Log** tab after a few \
+sessions and click **Summarize recurring issues** to see what keeps costing you points.
 
 ## 📝 Example Input
 
@@ -189,9 +183,9 @@ technique, and it never infers a hiring decision unless the interviewer states o
 - Notes/transcripts are sent to the Anthropic API for analysis and are not stored anywhere except \
 your local `progress_log.md` — nothing leaves your machine besides the API calls themselves \
 (Anthropic, and Granola if you connect it).
-- **Granola's REST API (Option B) requires a Business or Enterprise plan.** The free Basic plan \
-doesn't support it at all. **The MCP sign-in (Option C) works on Basic too** — Granola's MCP server \
-is available on every plan, though transcript access there is still paid-plan-only, same as \
+- **Granola's REST API (the API key option) requires a Business or Enterprise plan.** The free \
+Basic plan doesn't support it at all. **MCP sign-in works on Basic too** — Granola's MCP server is \
+available on every plan, though transcript access there is still paid-plan-only, same as \
 elsewhere.
 - **The MCP browse-and-select view is a best-effort parse, with a raw console as its safety \
 net.** Granola publishes tool *names* for third-party MCP clients (`list_meetings`, `get_meetings`, \
